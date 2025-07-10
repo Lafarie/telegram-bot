@@ -29,6 +29,8 @@ bot.command('help', (ctx) => commandHandler.handleHelpCommand(ctx));
 bot.command('groups', (ctx) => commandHandler.handleGroupsCommand(ctx));
 bot.command('channels', (ctx) => commandHandler.handleChannelsCommand(ctx));
 bot.command('allchats', (ctx) => commandHandler.handleAllChatsCommand(ctx));
+bot.command('adduser', (ctx) => commandHandler.handleAddUserCommand(ctx));
+bot.command('whoami', (ctx) => commandHandler.handleWhoAmICommand(ctx));
 bot.on('text', (ctx) => messageHandler.handleTextMessage(ctx));
 
 // Create middleware to track chats
