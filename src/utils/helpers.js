@@ -26,5 +26,29 @@ module.exports = {
 
   sleep: (ms) => {
     return new Promise(resolve => setTimeout(resolve, ms));
+  },
+  
+  isTelegramInviteLink: (url) => {
+    // Check if the URL is a valid Telegram invite link
+    // Formats: https://t.me/joinchat/XXXX or https://telegram.me/joinchat/XXXX or t.me/+XXXX
+    const telegramInvitePattern = /^(https?:\/\/)?(t(elegram)?\.me)\/(\+|joinchat\/)[a-zA-Z0-9_-]+$/i;
+    return telegramInvitePattern.test(url);
+  },
+  
+  extractInviteCode: (url) => {
+    // Extract the invite code from various Telegram invite link formats
+    if (!url) return null;
+    
+    // Handle t.me/+CODE format
+    if (url.includes('t.me/+') || url.includes('telegram.me/+')) {
+      return url.split('/+')[1];
+    }
+    
+    // Handle t.me/joinchat/CODE format
+    if (url.includes('/joinchat/')) {
+      return url.split('/joinchat/')[1];
+    }
+    
+    return null;
   }
 };

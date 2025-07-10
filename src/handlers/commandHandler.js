@@ -9,11 +9,11 @@ class CommandHandler {
     }
 
     handleHelpCommand(ctx) {
-        const message = `
-Available commands:
+        const message = `Available commands:
 /start - Welcome message
 /help - List of commands
-        `;
+
+You can also send me a Telegram group invitation link, and I'll automatically join that group!`;
         ctx.reply(message);
     }
 
