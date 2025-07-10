@@ -1,8 +1,9 @@
 const logger = require('../utils/logger');
 
 class CommandHandler {
-    constructor(groupService) {
+    constructor(groupService, forwardingService) {
         this.groupService = groupService;
+        this.forwardingService = forwardingService;
     }
 
     async handleStartCommand(ctx) {
@@ -29,6 +30,9 @@ class CommandHandler {
 /groups - List all groups I've joined
 /channels - List all channels I've joined
 /allchats - List all groups and channels I've joined
+
+*Media Forwarding:*
+/forwardmedia [fromChannelId] [toChannelId] [limit] - Forward media (photos, videos, documents) between channels
 
 *Admin Commands:*
 /adduser [user_id] - Add a user to authorized users (bot owner only)
@@ -233,25 +237,50 @@ You can also send me a Telegram group invitation link, and I'll automatically jo
         try {
             // Check if the user has permissions (should be a bot admin)
             const botOwner = process.env.BOT_OWNER ? Number(process.env.BOT_OWNER) : null;
+            const authorizedUsers = process.env.AUTHORIZED_USERS ? 
+                process.env.AUTHORIZED_USERS.split(',').map(id => Number(id)) : 
+                [];
             
-            if (botOwner && ctx.from && ctx.from.id !== botOwner) {
-                return ctx.reply("Only the bot owner can use this command.");
+            if (ctx.from && botOwner && ctx.from.id !== botOwner && !authorizedUsers.includes(ctx.from.id)) {
+                return ctx.reply("Only authorized users can use this command.");
             }
             
             // Parse the command arguments: /forwardmedia [fromChannelId] [toChannelId] [limit?]
             // Format: /forwardmedia -1002775486470 -1002685326619 5
             const text = ctx.message?.text || ctx.channelPost?.text;
-            if (!text) return;
+            if (!text) {
+                return ctx.reply("Command text not found. Please use format: /forwardmedia [fromChannelId] [toChannelId] [limit?]");
+            }
             
             const args = text.split(' ');
             
-            // Default channels from the request if not specified
-            const sourceChannelId = args[1] ? Number(args[1]) : -1002775486470; // Default: test channel
-            const targetChannelId = args[2] ? Number(args[2]) : -1002685326619; // Default: test channel
+            // Check if required arguments are provided
+            if (args.length < 3) {
+                return ctx.reply("Missing required arguments. Please use format: /forwardmedia [fromChannelId] [toChannelId] [limit?]");
+            }
+            
+            // Parse arguments
+            const sourceChannelId = Number(args[1]);
+            const targetChannelId = Number(args[2]);
             const limit = args[3] ? Number(args[3]) : 10; // Default: 10 messages
             
-            // Send an acknowledgment
-            await ctx.reply(`🔄 Starting to forward up to ${limit} media items from channel ${sourceChannelId} to channel ${targetChannelId}...`);
+            // Validate the arguments
+            if (isNaN(sourceChannelId) || isNaN(targetChannelId)) {
+                return ctx.reply("Invalid channel IDs. Please provide valid numeric IDs.");
+            }
+            
+            if (isNaN(limit) || limit <= 0 || limit > 50) {
+                return ctx.reply("Invalid limit. Please provide a number between 1 and 50.");
+            }
+            
+            // Send an acknowledgment with more detailed info
+            const progressMsg = await ctx.reply(
+                `🔄 Starting media forwarding process...\n\n` +
+                `From: ${sourceChannelId}\n` +
+                `To: ${targetChannelId}\n` +
+                `Limit: ${limit} media items\n\n` +
+                `This may take a few moments. Only media items (photos, videos, documents) will be forwarded.`
+            );
             
             // Execute the forwarding
             const result = await this.groupService.forwardMediaBetweenChannels(
@@ -260,15 +289,29 @@ You can also send me a Telegram group invitation link, and I'll automatically jo
                 limit
             );
             
-            // Report the result
+            // Edit the progress message with the result
             if (result.success) {
-                await ctx.reply(`✅ Successfully forwarded ${result.count} media items.`);
+                await ctx.telegram.editMessageText(
+                    ctx.chat.id,
+                    progressMsg.message_id,
+                    null,
+                    `✅ Forwarding complete!\n\n` +
+                    `Successfully forwarded ${result.count} media items from ${sourceChannelId} to ${targetChannelId}.`
+                );
             } else {
-                await ctx.reply(`⚠️ Forwarded ${result.count} media items with ${result.errors} errors.`);
+                await ctx.telegram.editMessageText(
+                    ctx.chat.id,
+                    progressMsg.message_id,
+                    null,
+                    `⚠️ Forwarding completed with issues.\n\n` +
+                    `Forwarded: ${result.count} media items\n` +
+                    `Failed: ${result.errors} items\n\n` +
+                    `Please check the logs for more information.`
+                );
             }
         } catch (error) {
             logger.error('Error handling forward media command:', error);
-            await ctx.reply("❌ An error occurred while forwarding media.");
+            await ctx.reply("❌ An error occurred while forwarding media. Please check the logs for details.");
         }
     }
 }

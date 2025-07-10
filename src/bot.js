@@ -6,6 +6,7 @@ const MediaHandler = require('./handlers/mediaHandler');
 const CommandHandler = require('./handlers/commandHandler');
 const MessageHandler = require('./handlers/messageHandler');
 const GroupService = require('./services/groupService');
+const ForwardingService = require('./services/forwardingService');
 const logger = require('./utils/logger');
 const debug = require('./utils/debug');
 
@@ -19,10 +20,11 @@ bot.use(rateLimitMiddleware);
 
 // Initialize services
 const groupService = new GroupService(bot);
+const forwardingService = new ForwardingService(bot);
 
 // Initialize handlers
 const mediaHandler = new MediaHandler();
-const commandHandler = new CommandHandler(groupService);
+const commandHandler = new CommandHandler(groupService, forwardingService);
 const messageHandler = new MessageHandler(groupService);
 
 // Regular message handlers
