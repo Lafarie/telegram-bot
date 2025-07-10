@@ -91,8 +91,16 @@ bot.on('channel_post', async (ctx) => {
 bot.use((ctx, next) => {
   // Extract chat info from context and add to our tracker
   if (ctx.chat && (ctx.chat.type === 'group' || ctx.chat.type === 'supergroup' || ctx.chat.type === 'channel')) {
+    logger.info(`Tracking chat: ${ctx.chat.title} (${ctx.chat.id}), type: ${ctx.chat.type}`);
     groupService.addJoinedChat(ctx.chat);
   }
+  
+  // Also track chats from channel posts
+  if (ctx.channelPost && ctx.channelPost.chat) {
+    logger.info(`Tracking channel from post: ${ctx.channelPost.chat.title} (${ctx.channelPost.chat.id})`);
+    groupService.addJoinedChat(ctx.channelPost.chat);
+  }
+  
   return next();
 });
 

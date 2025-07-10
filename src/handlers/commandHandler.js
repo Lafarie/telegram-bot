@@ -1,15 +1,24 @@
+const logger = require('../utils/logger');
+
 class CommandHandler {
     constructor(groupService) {
         this.groupService = groupService;
     }
 
-    handleStartCommand(ctx) {
-        const message = "Welcome to the Telegram Bot! Use /help to see available commands.";
-        ctx.reply(message);
+    async handleStartCommand(ctx) {
+        try {
+            const message = "Welcome to the Telegram Bot! Use /help to see available commands.";
+            logger.info('Sending start command response');
+            await ctx.reply(message);
+            logger.info('Start command response sent successfully');
+        } catch (error) {
+            logger.error('Error sending start command response:', error);
+        }
     }
 
-    handleHelpCommand(ctx) {
-        const message = `📋 *Available commands:*
+    async handleHelpCommand(ctx) {
+        try {
+            const message = `📋 *Available commands:*
 
 *Basic Commands:*
 /start - Welcome message
@@ -25,7 +34,20 @@ class CommandHandler {
 /adduser [user_id] - Add a user to authorized users (bot owner only)
 
 You can also send me a Telegram group invitation link, and I'll automatically join that group!`;
-        ctx.reply(message, { parse_mode: 'Markdown' });
+            
+            logger.info('Sending help command response');
+            await ctx.reply(message, { parse_mode: 'Markdown' });
+            logger.info('Help command response sent successfully');
+        } catch (error) {
+            logger.error('Error sending help command response:', error);
+            // Try without markdown
+            try {
+                const plainMessage = message.replace(/\*/g, '');
+                await ctx.reply(plainMessage);
+            } catch (secondError) {
+                logger.error('Error sending plain help message:', secondError);
+            }
+        }
     }
     
     async handleGroupsCommand(ctx) {
@@ -78,11 +100,15 @@ You can also send me a Telegram group invitation link, and I'll automatically jo
     
     async handleAllChatsCommand(ctx) {
         try {
+            logger.info('Fetching chat data for /allchats command');
             const chats = await this.groupService.getJoinedChats();
             const groups = [...chats.groups, ...chats.supergroups];
             
+            logger.info(`Found ${groups.length} groups and ${chats.channels.length} channels`);
+            
             if (groups.length === 0 && chats.channels.length === 0) {
-                return ctx.reply("I haven't joined any groups or channels yet.");
+                logger.info('No chats to display, sending empty response');
+                return await ctx.reply("I haven't joined any groups or channels yet.");
             }
             
             let message = "🔍 *All Chats I've Joined*\n\n";
@@ -104,10 +130,34 @@ You can also send me a Telegram group invitation link, and I'll automatically jo
                 });
             }
             
-            return ctx.reply(message, { parse_mode: 'Markdown' });
+            logger.info('Sending allchats command response');
+            const response = await ctx.reply(message, { parse_mode: 'Markdown' });
+            logger.info('Allchats command response sent successfully');
+            return response;
         } catch (error) {
-            console.error('Error listing all chats:', error);
-            return ctx.reply("Sorry, I encountered an error while listing the chats.");
+            logger.error('Error listing all chats:', error);
+            
+            // Try to send a simpler message without markdown
+            try {
+                logger.info('Attempting to send plain text response');
+                const plainMessage = "There was an error formatting the chat list. Here's what I could retrieve:\n\n";
+                
+                const chats = await this.groupService.getJoinedChats();
+                let chatInfo = '';
+                
+                if (chats.groups.length > 0 || chats.supergroups.length > 0) {
+                    chatInfo += "Groups: " + [...chats.groups, ...chats.supergroups].map(g => g.title).join(', ') + "\n\n";
+                }
+                
+                if (chats.channels.length > 0) {
+                    chatInfo += "Channels: " + chats.channels.map(c => c.title).join(', ');
+                }
+                
+                return await ctx.reply(plainMessage + chatInfo);
+            } catch (secondError) {
+                logger.error('Second error when sending simplified chat list:', secondError);
+                return await ctx.reply("Sorry, I encountered an error while listing the chats.");
+            }
         }
     }
     

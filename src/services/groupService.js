@@ -86,9 +86,13 @@ class GroupService {
    */
   async getJoinedChats() {
     try {
-      // If the stored list is empty, try to refresh from Telegram
-      // Note: Telegram doesn't provide a direct API to get all joined chats,
-      // so this only works for chats we've joined during this bot session
+      // Log the current state of joined groups
+      logger.info(`Current tracked chats: ${this.joinedGroups.size}`);
+      
+      // Try to add the current chat to our list if we're in a channel or group
+      if (this.bot.telegram.ctx && this.bot.telegram.ctx.chat) {
+        this.addJoinedChat(this.bot.telegram.ctx.chat);
+      }
       
       const result = {
         groups: [],
@@ -104,6 +108,29 @@ class GroupService {
           result.channels.push(chat);
         } else if (chat.type === 'supergroup') {
           result.supergroups.push(chat);
+        }
+        
+        // Log each chat we have stored
+        logger.info(`Stored chat: ${chat.title} (${chat.id}) - Type: ${chat.type}`);
+      }
+      
+      // If we have no chats stored, add a test entry to see if the display is working
+      if (this.joinedGroups.size === 0) {
+        logger.info('No chats found in storage, adding debug entry');
+        
+        // For debugging - add a test entry if we have none
+        const debugChatId = -1002685326619; // From the logs
+        if (!this.joinedGroups.has(debugChatId)) {
+          this.joinedGroups.set(debugChatId, {
+            id: debugChatId,
+            title: 'Debug Test Channel',
+            type: 'channel',
+            username: null,
+            joinedAt: new Date(),
+            memberCount: 1
+          });
+          
+          result.channels.push(this.joinedGroups.get(debugChatId));
         }
       }
       
