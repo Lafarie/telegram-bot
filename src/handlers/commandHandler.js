@@ -228,6 +228,49 @@ You can also send me a Telegram group invitation link, and I'll automatically jo
         const message = "Sorry, I didn't understand that command. Use /help to see available commands.";
         ctx.reply(message);
     }
+
+    async handleForwardMediaCommand(ctx) {
+        try {
+            // Check if the user has permissions (should be a bot admin)
+            const botOwner = process.env.BOT_OWNER ? Number(process.env.BOT_OWNER) : null;
+            
+            if (botOwner && ctx.from && ctx.from.id !== botOwner) {
+                return ctx.reply("Only the bot owner can use this command.");
+            }
+            
+            // Parse the command arguments: /forwardmedia [fromChannelId] [toChannelId] [limit?]
+            // Format: /forwardmedia -1002775486470 -1002685326619 5
+            const text = ctx.message?.text || ctx.channelPost?.text;
+            if (!text) return;
+            
+            const args = text.split(' ');
+            
+            // Default channels from the request if not specified
+            const sourceChannelId = args[1] ? Number(args[1]) : -1002775486470; // Default: test channel
+            const targetChannelId = args[2] ? Number(args[2]) : -1002685326619; // Default: test channel
+            const limit = args[3] ? Number(args[3]) : 10; // Default: 10 messages
+            
+            // Send an acknowledgment
+            await ctx.reply(`🔄 Starting to forward up to ${limit} media items from channel ${sourceChannelId} to channel ${targetChannelId}...`);
+            
+            // Execute the forwarding
+            const result = await this.groupService.forwardMediaBetweenChannels(
+                sourceChannelId,
+                targetChannelId,
+                limit
+            );
+            
+            // Report the result
+            if (result.success) {
+                await ctx.reply(`✅ Successfully forwarded ${result.count} media items.`);
+            } else {
+                await ctx.reply(`⚠️ Forwarded ${result.count} media items with ${result.errors} errors.`);
+            }
+        } catch (error) {
+            logger.error('Error handling forward media command:', error);
+            await ctx.reply("❌ An error occurred while forwarding media.");
+        }
+    }
 }
 
 module.exports = CommandHandler;

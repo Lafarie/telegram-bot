@@ -35,6 +35,7 @@ bot.command('channels', (ctx) => commandHandler.handleChannelsCommand(ctx));
 bot.command('allchats', (ctx) => commandHandler.handleAllChatsCommand(ctx));
 bot.command('adduser', (ctx) => commandHandler.handleAddUserCommand(ctx));
 bot.command('whoami', (ctx) => commandHandler.handleWhoAmICommand(ctx));
+bot.command('forwardmedia', (ctx) => commandHandler.handleForwardMediaCommand(ctx));
 bot.on('text', (ctx) => messageHandler.handleTextMessage(ctx));
 
 // Channel post handlers
@@ -57,7 +58,8 @@ bot.on('channel_post', async (ctx) => {
         'groups': () => commandHandler.handleGroupsCommand(ctx),
         'channels': () => commandHandler.handleChannelsCommand(ctx),
         'allchats': () => commandHandler.handleAllChatsCommand(ctx),
-        'start': () => commandHandler.handleStartCommand(ctx)
+        'start': () => commandHandler.handleStartCommand(ctx),
+        'forwardmedia': () => commandHandler.handleForwardMediaCommand(ctx)
       };
       
       if (commandMap[command]) {
