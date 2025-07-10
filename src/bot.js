@@ -19,14 +19,26 @@ const groupService = new GroupService(bot);
 
 // Initialize handlers
 const mediaHandler = new MediaHandler();
-const commandHandler = new CommandHandler();
+const commandHandler = new CommandHandler(groupService);
 const messageHandler = new MessageHandler(groupService);
 
 bot.on('photo', (ctx) => mediaHandler.handleMediaUpload(ctx));
 bot.on('document', (ctx) => mediaHandler.handleMediaUpload(ctx));
 bot.command('start', (ctx) => commandHandler.handleStartCommand(ctx));
 bot.command('help', (ctx) => commandHandler.handleHelpCommand(ctx));
+bot.command('groups', (ctx) => commandHandler.handleGroupsCommand(ctx));
+bot.command('channels', (ctx) => commandHandler.handleChannelsCommand(ctx));
+bot.command('allchats', (ctx) => commandHandler.handleAllChatsCommand(ctx));
 bot.on('text', (ctx) => messageHandler.handleTextMessage(ctx));
+
+// Create middleware to track chats
+bot.use((ctx, next) => {
+  // Extract chat info from context and add to our tracker
+  if (ctx.chat && (ctx.chat.type === 'group' || ctx.chat.type === 'supergroup' || ctx.chat.type === 'channel')) {
+    groupService.addJoinedChat(ctx.chat);
+  }
+  return next();
+});
 
 // Error handling
 bot.catch((err, ctx) => {
