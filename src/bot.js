@@ -7,11 +7,14 @@ const CommandHandler = require('./handlers/commandHandler');
 const MessageHandler = require('./handlers/messageHandler');
 const GroupService = require('./services/groupService');
 const logger = require('./utils/logger');
+const debug = require('./utils/debug');
 
 const bot = new Telegraf(process.env.BOT_TOKEN);
 
-// Middleware
+// Middleware - order is important
+// First check for channel posts and special cases in auth middleware
 bot.use(authMiddleware);
+// Then apply rate limiting
 bot.use(rateLimitMiddleware);
 
 // Initialize services
@@ -22,6 +25,7 @@ const mediaHandler = new MediaHandler();
 const commandHandler = new CommandHandler(groupService);
 const messageHandler = new MessageHandler(groupService);
 
+// Regular message handlers
 bot.on('photo', (ctx) => mediaHandler.handleMediaUpload(ctx));
 bot.on('document', (ctx) => mediaHandler.handleMediaUpload(ctx));
 bot.command('start', (ctx) => commandHandler.handleStartCommand(ctx));
@@ -33,6 +37,56 @@ bot.command('adduser', (ctx) => commandHandler.handleAddUserCommand(ctx));
 bot.command('whoami', (ctx) => commandHandler.handleWhoAmICommand(ctx));
 bot.on('text', (ctx) => messageHandler.handleTextMessage(ctx));
 
+// Channel post handlers
+bot.on('channel_post', async (ctx) => {
+  const channelTitle = ctx.channelPost.chat.title || 'unnamed channel';
+  const channelId = ctx.channelPost.chat.id;
+  
+  logger.info(`Processing channel post in "${channelTitle}" (${channelId})`);
+  debug.logContext(ctx, 'Channel post details');
+  
+  try {
+    // Handle commands in channels
+    if (ctx.channelPost.text && ctx.channelPost.text.startsWith('/')) {
+      const command = ctx.channelPost.text.split(' ')[0].substring(1);
+      logger.info(`Channel command received: /${command}`);
+      
+      // Map commands to handlers
+      const commandMap = {
+        'help': () => commandHandler.handleHelpCommand(ctx),
+        'groups': () => commandHandler.handleGroupsCommand(ctx),
+        'channels': () => commandHandler.handleChannelsCommand(ctx),
+        'allchats': () => commandHandler.handleAllChatsCommand(ctx),
+        'start': () => commandHandler.handleStartCommand(ctx)
+      };
+      
+      if (commandMap[command]) {
+        logger.info(`Executing channel command: /${command}`);
+        return await commandMap[command]();
+      } else {
+        logger.info(`Unknown channel command: /${command}`);
+      }
+    }
+    
+    // Handle media in channels
+    if (ctx.channelPost.photo) {
+      logger.info('Processing channel photo');
+      return await mediaHandler.handleMediaUpload(ctx);
+    } else if (ctx.channelPost.document) {
+      logger.info('Processing channel document');
+      return await mediaHandler.handleMediaUpload(ctx);
+    } else if (ctx.channelPost.text) {
+      logger.info(`Processing channel text: ${ctx.channelPost.text.substring(0, 30)}...`);
+      // Use the text handler
+      return await messageHandler.handleTextMessage(ctx);
+    } else {
+      logger.info('Channel post with unsupported content type');
+    }
+  } catch (error) {
+    logger.error('Error processing channel post:', error);
+  }
+});
+
 // Create middleware to track chats
 bot.use((ctx, next) => {
   // Extract chat info from context and add to our tracker
@@ -42,10 +96,24 @@ bot.use((ctx, next) => {
   return next();
 });
 
+// Add debug middleware for all updates
+bot.use((ctx, next) => {
+  // Debug log every incoming update
+  debug.logContext(ctx, 'Incoming update');
+  return next();
+});
+
 // Error handling
 bot.catch((err, ctx) => {
   logger.error(`Encountered an error for ${ctx.updateType}:`, err);
-  ctx.reply('An error occurred while processing your request.');
+  
+  // Only reply to errors in private chats, not in channels/groups
+  if (ctx.chat && ctx.chat.type === 'private') {
+    ctx.reply('An error occurred while processing your request.')
+      .catch(replyErr => {
+        logger.error('Failed to send error message:', replyErr);
+      });
+  }
 });
 
 // Start the bot

@@ -16,12 +16,31 @@ class MediaHandler {
   }
 
   async handleMediaUpload(ctx) {
-    const mediaFile = ctx.message.document || (ctx.message.photo && ctx.message.photo[0]);
+    // Handle both regular messages and channel posts
+    const message = ctx.message || ctx.channelPost;
+    
+    if (!message) {
+      return ctx.reply('Unable to process this media.');
+    }
+    
+    const mediaFile = message.document || (message.photo && message.photo[0]);
 
     if (mediaFile) {
       const fileId = mediaFile.file_id;
-      await this.forwardMedia(ctx, fileId);
-      await ctx.reply('Media has been forwarded successfully!');
+      
+      // For channel posts, we may need special handling
+      if (ctx.channelPost) {
+        if (ctx.channelPost.photo) {
+          await ctx.replyWithPhoto(fileId);
+        } else if (ctx.channelPost.document) {
+          await ctx.replyWithDocument(fileId);
+        }
+        return; // In channels, don't send confirmation message
+      } else {
+        // Regular message flow
+        await this.forwardMedia(ctx, fileId);
+        await ctx.reply('Media has been forwarded successfully!');
+      }
     } else {
       await ctx.reply('Please upload a valid media file.');
     }
