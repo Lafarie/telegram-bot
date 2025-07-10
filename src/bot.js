@@ -160,3 +160,6 @@ bot.launch()
     logger.error('Error launching the bot:', error);
     console.error('Error launching the bot:', error);
   });
+
+// Handle callback queries from inline keyboards
+bot.on('callback_query', (ctx) => commandHandler.handleCallbackQuery(ctx));

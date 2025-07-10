@@ -1,5 +1,6 @@
 const helpers = require('../utils/helpers');
 const logger = require('../utils/logger');
+const KeyboardUtils = require('../utils/keyboards');
 
 class MessageHandler {
   constructor(groupService) {
@@ -28,10 +29,10 @@ class MessageHandler {
     } else if (helpers.isTelegramInviteLink(text)) {
       // Process Telegram invitation link - not for channel posts
       if (!isChannelPost) {
-        await this.handleGroupInviteLink(ctx, text);
+        this.processInviteLink(ctx, text);
       }
     } else {
-      // Only respond to unknown messages in private chats
+      // For any other message, show the main menu (in private chats)
       if (!isChannelPost && ctx.chat.type === 'private') {
         this.handleUnknownMessage(ctx);
       }
@@ -56,42 +57,46 @@ class MessageHandler {
   }
 
   sendWelcomeMessage(ctx) {
-    const welcomeText = "Welcome to the bot! Use /help to see available commands.";
     try {
-      ctx.reply(welcomeText);
+      const welcomeText = "Welcome to the Media Forwarding Bot! Use the buttons below to navigate:";
+      ctx.reply(welcomeText, KeyboardUtils.getMainMenuKeyboard());
     } catch (error) {
       logger.error('Error sending welcome message:', error);
     }
   }
 
   sendHelpMessage(ctx) {
-    const helpText = `📋 *Available commands:*
-
-*Basic Commands:*
-/start - Welcome message
-/help - List of commands
-/whoami - Show your user ID and information
-
-*Group & Channel Management:*
-/groups - List all groups I've joined
-/channels - List all channels I've joined
-/allchats - List all groups and channels I've joined
-
-You can also send me a Telegram group invitation link, and I'll automatically join that group!`;
-
     try {
-      ctx.reply(helpText, { parse_mode: 'Markdown' });
+      const helpText = `📋 *Bot Help & Information*
+
+This bot helps you forward media between Telegram channels and groups.
+
+*Main Features:*
+• List joined groups and channels
+• Forward media (photos, videos, documents) between channels
+• Channel management
+• User authentication
+
+*How to use:*
+1. Use the main menu buttons to navigate
+2. For forwarding media, select source and target channels
+3. Choose how many items to forward
+
+*Tip:* Use /start to bring up the main menu anytime`;
+
+      ctx.reply(helpText, { 
+        parse_mode: 'Markdown',
+        ...KeyboardUtils.getMainMenuKeyboard()
+      });
     } catch (error) {
-      // Try without markdown if it fails
-      logger.error('Error sending help message with markdown:', error);
-      ctx.reply(helpText.replace(/\*/g, ''));
+      logger.error('Error sending help message:', error);
     }
   }
 
   handleUnknownMessage(ctx) {
-    const unknownText = "Sorry, I didn't understand that. Type /help for assistance.";
     try {
-      ctx.reply(unknownText);
+      const unknownText = "I'm not sure what you mean. Please use the menu buttons below:";
+      ctx.reply(unknownText, KeyboardUtils.getMainMenuKeyboard());
     } catch (error) {
       logger.error('Error sending unknown message response:', error);
     }

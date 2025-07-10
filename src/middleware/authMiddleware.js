@@ -1,8 +1,16 @@
 const logger = require('../utils/logger');
 
 module.exports = async (ctx, next) => {
-  // Always allow /help command
-  if (ctx.message && ctx.message.text && ctx.message.text.startsWith('/help')) {
+  // Always allow /help and /start commands
+  if (ctx.message && ctx.message.text && (
+      ctx.message.text.startsWith('/help') || 
+      ctx.message.text.startsWith('/start')
+    )) {
+    return next();
+  }
+
+  // Always allow callback queries (for interactive buttons)
+  if (ctx.callbackQuery) {
     return next();
   }
 
