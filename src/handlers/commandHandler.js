@@ -52,7 +52,7 @@ You can also send me a Telegram group invitation link, and I'll automatically jo
     
     async handleGroupsCommand(ctx) {
         try {
-            const chats = await this.groupService.getJoinedChats();
+            const chats = await this.groupService.getJoinedChats(ctx);
             const groups = [...chats.groups, ...chats.supergroups];
             
             if (groups.length === 0) {
@@ -77,7 +77,7 @@ You can also send me a Telegram group invitation link, and I'll automatically jo
     
     async handleChannelsCommand(ctx) {
         try {
-            const chats = await this.groupService.getJoinedChats();
+            const chats = await this.groupService.getJoinedChats(ctx);
             
             if (chats.channels.length === 0) {
                 return ctx.reply("I haven't joined any channels yet.");
@@ -101,7 +101,8 @@ You can also send me a Telegram group invitation link, and I'll automatically jo
     async handleAllChatsCommand(ctx) {
         try {
             logger.info('Fetching chat data for /allchats command');
-            const chats = await this.groupService.getJoinedChats();
+            // Pass the current context to getJoinedChats to track the current chat
+            const chats = await this.groupService.getJoinedChats(ctx);
             const groups = [...chats.groups, ...chats.supergroups];
             
             logger.info(`Found ${groups.length} groups and ${chats.channels.length} channels`);

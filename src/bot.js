@@ -89,16 +89,38 @@ bot.on('channel_post', async (ctx) => {
 
 // Create middleware to track chats
 bot.use((ctx, next) => {
-  // Extract chat info from context and add to our tracker
-  if (ctx.chat && (ctx.chat.type === 'group' || ctx.chat.type === 'supergroup' || ctx.chat.type === 'channel')) {
-    logger.info(`Tracking chat: ${ctx.chat.title} (${ctx.chat.id}), type: ${ctx.chat.type}`);
-    groupService.addJoinedChat(ctx.chat);
-  }
-  
-  // Also track chats from channel posts
-  if (ctx.channelPost && ctx.channelPost.chat) {
-    logger.info(`Tracking channel from post: ${ctx.channelPost.chat.title} (${ctx.channelPost.chat.id})`);
-    groupService.addJoinedChat(ctx.channelPost.chat);
+  try {
+    // Extract chat info from context and add to our tracker
+    if (ctx.chat && (ctx.chat.type === 'group' || ctx.chat.type === 'supergroup' || ctx.chat.type === 'channel')) {
+      logger.info(`Tracking chat: ${ctx.chat.title || 'Unnamed'} (${ctx.chat.id}), type: ${ctx.chat.type}`);
+      groupService.addJoinedChat(ctx.chat);
+    }
+    
+    // Also track chats from channel posts
+    if (ctx.channelPost && ctx.channelPost.chat) {
+      logger.info(`Tracking channel from post: ${ctx.channelPost.chat.title || 'Unnamed'} (${ctx.channelPost.chat.id})`);
+      groupService.addJoinedChat(ctx.channelPost.chat);
+    }
+    
+    // Track chats from updates
+    if (ctx.update) {
+      // Find any chat objects in the update
+      const possibleChats = [
+        ctx.update.message?.chat,
+        ctx.update.channel_post?.chat,
+        ctx.update.edited_message?.chat,
+        ctx.update.callback_query?.message?.chat
+      ].filter(chat => chat != null);
+      
+      for (const chat of possibleChats) {
+        if (chat && (chat.type === 'group' || chat.type === 'supergroup' || chat.type === 'channel')) {
+          logger.info(`Tracking chat from update: ${chat.title || 'Unnamed'} (${chat.id}), type: ${chat.type}`);
+          groupService.addJoinedChat(chat);
+        }
+      }
+    }
+  } catch (error) {
+    logger.error('Error in chat tracking middleware:', error);
   }
   
   return next();
