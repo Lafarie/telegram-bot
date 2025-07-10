@@ -1,22 +1,26 @@
 class MediaHandler {
-  constructor(bot) {
-    this.bot = bot;
+  constructor() {
+    // Constructor no longer needs to store bot instance
   }
 
-  async forwardMedia(chatId, mediaFile) {
+  async forwardMedia(ctx, fileId) {
     try {
-      await this.bot.sendDocument(chatId, mediaFile);
+      if (ctx.message.document) {
+        await ctx.replyWithDocument(fileId);
+      } else if (ctx.message.photo) {
+        await ctx.replyWithPhoto(fileId);
+      }
     } catch (error) {
       console.error('Error forwarding media:', error);
     }
   }
 
   async handleMediaUpload(ctx) {
-    const { chat, message_id } = ctx.message;
-    const mediaFile = ctx.message.document || ctx.message.photo;
+    const mediaFile = ctx.message.document || (ctx.message.photo && ctx.message.photo[0]);
 
     if (mediaFile) {
-      await this.forwardMedia(chat.id, mediaFile.file_id);
+      const fileId = mediaFile.file_id;
+      await this.forwardMedia(ctx, fileId);
       await ctx.reply('Media has been forwarded successfully!');
     } else {
       await ctx.reply('Please upload a valid media file.');

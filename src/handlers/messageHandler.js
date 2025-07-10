@@ -1,35 +1,34 @@
 class MessageHandler {
-  constructor(bot) {
-    this.bot = bot;
+  constructor() {
+    // Constructor no longer needs to store bot instance
   }
 
-  handleTextMessage(msg) {
-    const chatId = msg.chat.id;
-    const text = msg.text;
+  handleTextMessage(ctx) {
+    const text = ctx.message.text;
 
     // Basic command handling
     if (text.startsWith('/start')) {
-      this.sendWelcomeMessage(chatId);
+      this.sendWelcomeMessage(ctx);
     } else if (text.startsWith('/help')) {
-      this.sendHelpMessage(chatId);
+      this.sendHelpMessage(ctx);
     } else {
-      this.handleUnknownMessage(chatId);
+      this.handleUnknownMessage(ctx);
     }
   }
 
-  sendWelcomeMessage(chatId) {
+  sendWelcomeMessage(ctx) {
     const welcomeText = "Welcome to the bot! Use /help to see available commands.";
-    this.bot.sendMessage(chatId, welcomeText);
+    ctx.reply(welcomeText);
   }
 
-  sendHelpMessage(chatId) {
+  sendHelpMessage(ctx) {
     const helpText = "Available commands:\n/start - Start the bot\n/help - Show this help message";
-    this.bot.sendMessage(chatId, helpText);
+    ctx.reply(helpText);
   }
 
-  handleUnknownMessage(chatId) {
+  handleUnknownMessage(ctx) {
     const unknownText = "Sorry, I didn't understand that. Type /help for assistance.";
-    this.bot.sendMessage(chatId, unknownText);
+    ctx.reply(unknownText);
   }
 }
 

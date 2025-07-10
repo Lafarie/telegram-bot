@@ -12,7 +12,7 @@ const bot = new Telegraf(process.env.BOT_TOKEN);
 bot.use(authMiddleware);
 bot.use(rateLimitMiddleware);
 
-// Handlers
+// Initialize handlers
 const mediaHandler = new MediaHandler();
 const commandHandler = new CommandHandler();
 const messageHandler = new MessageHandler();

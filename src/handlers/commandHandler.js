@@ -1,25 +1,25 @@
 class CommandHandler {
-    constructor(bot) {
-        this.bot = bot;
+    constructor() {
+        // Constructor no longer needs to store bot instance
     }
 
-    handleStartCommand(chatId) {
+    handleStartCommand(ctx) {
         const message = "Welcome to the Telegram Bot! Use /help to see available commands.";
-        this.bot.sendMessage(chatId, message);
+        ctx.reply(message);
     }
 
-    handleHelpCommand(chatId) {
+    handleHelpCommand(ctx) {
         const message = `
 Available commands:
 /start - Welcome message
 /help - List of commands
         `;
-        this.bot.sendMessage(chatId, message);
+        ctx.reply(message);
     }
 
-    handleUnknownCommand(chatId) {
+    handleUnknownCommand(ctx) {
         const message = "Sorry, I didn't understand that command. Use /help to see available commands.";
-        this.bot.sendMessage(chatId, message);
+        ctx.reply(message);
     }
 }
 
