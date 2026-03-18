@@ -95,8 +95,12 @@ This bot is focused on AI chat and analytics actions.
             
             logger.info(`Received callback: ${callbackData} from user: ${userId}`);
             
-            // Acknowledge the callback to remove loading state
-            await ctx.answerCbQuery();
+            // Acknowledge callback and show quick processing feedback for long-running actions.
+            if (callbackData.startsWith('ai_')) {
+                await ctx.answerCbQuery('Processing...');
+            } else {
+                await ctx.answerCbQuery();
+            }
             
             // Handle different callback types
             if (callbackData === 'cmd_main_menu') {
@@ -186,7 +190,10 @@ This bot is focused on AI chat and analytics actions.
     }
 
     async handleAiAnalyticsAction(ctx, action) {
+        let processingMessage = null;
         try {
+            processingMessage = await this.showProcessingState(ctx, action);
+
             const actionPrompts = {
                 ai_analytics_all: 'Provide a complete business analytics snapshot including sales, orders, trend direction, and top opportunities.',
                 ai_revenue_24h: 'Provide sales revenue insight for the last 24 hours with key drivers and short recommendation.',
@@ -202,6 +209,7 @@ This bot is focused on AI chat and analytics actions.
             const prompt = actionPrompts[action] || 'Provide a concise business analytics summary.';
             let content;
             const requiresSheetData = action.startsWith('ai_');
+            const brevityInstructions = this.getBrevityInstructions(action);
 
             if (this.aiAgentService) {
                 const userId = ctx.from ? ctx.from.id : 'unknown';
@@ -212,11 +220,11 @@ This bot is focused on AI chat and analytics actions.
                         `Could not read Google Sheet data for this analytics action.\n\n` +
                         `Reason: ${sheetData.error}\n\n` +
                         'Please verify GOOGLE_SHEET_URL and sheet sharing permissions, then try again.';
-                    return ctx.editMessageText(sheetErrorMessage, KeyboardUtils.getAiActionsKeyboard());
+                    return this.sendResultMessage(ctx, processingMessage, sheetErrorMessage);
                 }
 
                 if (action === 'ai_analytics_image') {
-                    return this.sendAnalyticsImage(ctx, sheetData.table);
+                    return this.sendAnalyticsImage(ctx, sheetData.table, processingMessage);
                 }
 
                 const analyticsOutputInstructions = await this.getInstructionContent(
@@ -230,6 +238,8 @@ This bot is focused on AI chat and analytics actions.
                         content:
                             'You are a business analytics assistant. Use ONLY provided spreadsheet data for metrics and conclusions. ' +
                             'Always reference which columns/fields were used. If data is missing, say exactly what is missing.\n\n' +
+                            'Brevity mode requirements:\n' +
+                            brevityInstructions + '\n\n' +
                             'Output instructions:\n' +
                             analyticsOutputInstructions
                     },
@@ -238,6 +248,7 @@ This bot is focused on AI chat and analytics actions.
                         content:
                             `${prompt}\n\n` +
                             'Data source requirement: respond based on Google Sheet context below.\n' +
+                            `Brevity mode: ${brevityInstructions}\n` +
                             'Output format:\n' +
                             '1) Key metrics\n' +
                             '2) Short explanation\n' +
@@ -246,17 +257,40 @@ This bot is focused on AI chat and analytics actions.
                     }
                 ];
                 content = await this.aiAgentService.createChatCompletion(messages, userId);
+                content = this.enforceBrevityOnText(content);
             } else {
                 content = 'AI service is not configured. Set AI_BASE_URL, AI_API_KEY, and AI_MODEL to enable analytics actions.';
             }
 
-            return ctx.editMessageText(content, KeyboardUtils.getAiActionsKeyboard());
+            return this.sendResultMessage(ctx, processingMessage, content);
         } catch (error) {
             logger.error('Error handling AI analytics action:', error);
-            return ctx.editMessageText(
-                'Could not complete this analytics action right now. Please try again.',
-                KeyboardUtils.getAiActionsKeyboard()
-            );
+            const fallbackMessage = 'Could not complete this analytics action right now. Please try again.';
+            return this.sendResultMessage(ctx, processingMessage, fallbackMessage);
+        }
+    }
+
+    async showProcessingState(ctx, action) {
+        const actionNames = {
+            ai_analytics_all: 'all analytics',
+            ai_revenue_24h: '24h revenue',
+            ai_revenue_48h: '48h revenue',
+            ai_revenue_7d: '7d revenue',
+            ai_top_products: 'top products',
+            ai_orders_summary: 'orders summary',
+            ai_conversion: 'conversion report',
+            ai_kpi_refresh: 'KPI snapshot',
+            ai_analytics_image: 'analytics image'
+        };
+
+        const target = actionNames[action] || 'analytics';
+        const text = `⏳ Processing ${target}...\n\nPlease wait while I fetch data and generate the response.`;
+
+        try {
+            return await ctx.reply(text, KeyboardUtils.getAiActionsKeyboard());
+        } catch (error) {
+            logger.warn(`Could not show processing state: ${error.message}`);
+            return null;
         }
     }
 
@@ -290,7 +324,7 @@ This bot is focused on AI chat and analytics actions.
         }
     }
 
-    async sendAnalyticsImage(ctx, table) {
+    async sendAnalyticsImage(ctx, table, processingMessage) {
         try {
             const series = this.extractChartSeries(table);
             const imageOutputInstructions = await this.getInstructionContent(
@@ -314,18 +348,264 @@ This bot is focused on AI chat and analytics actions.
                 ...KeyboardUtils.getAiActionsKeyboard()
             });
 
-            try {
-                return await ctx.editMessageText('Analytics image sent below.', KeyboardUtils.getAiActionsKeyboard());
-            } catch (error) {
-                return null;
-            }
+            return this.sendResultMessage(ctx, processingMessage, '✅ Analytics image sent.');
         } catch (error) {
             logger.error('Error generating analytics image:', error);
-            return ctx.editMessageText(
-                `Could not generate analytics image: ${error.message}`,
-                KeyboardUtils.getAiActionsKeyboard()
-            );
+            return this.sendResultMessage(ctx, processingMessage, `Could not generate analytics image: ${error.message}`);
         }
+    }
+
+    async sendResultMessage(ctx, processingMessage, text) {
+        const options = KeyboardUtils.getAiActionsKeyboard();
+        const normalizedText = this.normalizeTelegramText((text || '').toString());
+        const chunks = this.splitTextIntoChunks(normalizedText, 3800);
+
+        if (chunks.length === 0) {
+            return ctx.reply('(empty response)', options);
+        }
+
+        const withPage = chunks.length > 1
+            ? chunks.map((chunk, index) => `(${index + 1}/${chunks.length})\n${chunk}`)
+            : chunks;
+
+        let startIndex = 0;
+
+        if (processingMessage && processingMessage.message_id) {
+            try {
+                // Update the processing message with the first chunk.
+                await ctx.telegram.editMessageText(
+                    ctx.chat.id,
+                    processingMessage.message_id,
+                    undefined,
+                    withPage[0],
+                    options
+                );
+                startIndex = 1;
+            } catch (error) {
+                logger.warn(`Could not edit processing message: ${error.message}`);
+            }
+        }
+
+        // If processing message is not editable, send the first chunk as a new message.
+        if (startIndex === 0) {
+            if (withPage.length === 1) {
+                await ctx.reply(withPage[0], options);
+                return null;
+            }
+
+            await ctx.reply(withPage[0]);
+            startIndex = 1;
+        }
+
+        for (let i = startIndex; i < withPage.length; i += 1) {
+            if (i === withPage.length - 1) {
+                await ctx.reply(withPage[i], options);
+            } else {
+                await ctx.reply(withPage[i]);
+            }
+        }
+
+        return null;
+    }
+
+    splitTextIntoChunks(text, maxLength) {
+        if (!text) {
+            return [];
+        }
+
+        const lines = text.split('\n');
+        const chunks = [];
+        let current = '';
+
+        for (const line of lines) {
+            // Hard-split very long individual lines.
+            if (line.length > maxLength) {
+                if (current) {
+                    chunks.push(current);
+                    current = '';
+                }
+
+                for (let i = 0; i < line.length; i += maxLength) {
+                    chunks.push(line.slice(i, i + maxLength));
+                }
+                continue;
+            }
+
+            const candidate = current ? `${current}\n${line}` : line;
+            if (candidate.length > maxLength) {
+                if (current) {
+                    chunks.push(current);
+                    current = line;
+                } else {
+                    chunks.push(line);
+                    current = '';
+                }
+            } else {
+                current = candidate;
+            }
+        }
+
+        if (current) {
+            chunks.push(current);
+        }
+
+        return chunks;
+    }
+
+    normalizeTelegramText(text) {
+        if (!text) {
+            return '';
+        }
+
+        let value = text;
+
+        value = this.transformMarkdownTables(value);
+
+        // Remove fenced code blocks while keeping inner content.
+        value = value.replace(/```[a-zA-Z0-9_-]*\n?/g, '');
+        value = value.replace(/```/g, '');
+
+        // Convert markdown headings to plain labels.
+        value = value.replace(/^\s{0,3}#{1,6}\s+/gm, '');
+        value = value.replace(/^\s*\d+\.\s+(.+)$/gm, '$1');
+
+        // Remove markdown emphasis markers.
+        value = value.replace(/\*\*(.*?)\*\*/g, '$1');
+        value = value.replace(/__(.*?)__/g, '$1');
+        value = value.replace(/\*(.*?)\*/g, '$1');
+        value = value.replace(/_(.*?)_/g, '$1');
+
+        // Remove inline code markers.
+        value = value.replace(/`([^`]+)`/g, '$1');
+
+        // Remove markdown horizontal rules.
+        value = value.replace(/^\s*[-*_]{3,}\s*$/gm, '');
+
+        // Simplify list markers for Telegram readability.
+        value = value.replace(/^\s*[-*]\s+/gm, '• ');
+
+        // Normalize spacing around section titles.
+        value = value.replace(/\n([A-Za-z][A-Za-z0-9\s&/()%-]{2,50}:)\n/g, '\n\n$1\n');
+
+        // Compress excessive blank lines.
+        value = value.replace(/\n{3,}/g, '\n\n');
+
+        return value.trim();
+    }
+
+    transformMarkdownTables(text) {
+        const lines = text.split('\n');
+        const output = [];
+        let i = 0;
+
+        while (i < lines.length) {
+            const line = lines[i];
+            if (!this.looksLikeTableLine(line)) {
+                output.push(line);
+                i += 1;
+                continue;
+            }
+
+            const tableLines = [];
+            while (i < lines.length && this.looksLikeTableLine(lines[i])) {
+                tableLines.push(lines[i]);
+                i += 1;
+            }
+
+            const parsed = this.parseMarkdownTable(tableLines);
+            if (parsed.length === 0) {
+                output.push(...tableLines);
+                continue;
+            }
+
+            output.push(...parsed);
+        }
+
+        return output.join('\n');
+    }
+
+    looksLikeTableLine(line) {
+        const trimmed = (line || '').trim();
+        if (!trimmed.includes('|')) {
+            return false;
+        }
+
+        const hasCellPattern = /^\|?.+\|.+\|?$/.test(trimmed);
+        return hasCellPattern;
+    }
+
+    parseMarkdownTable(lines) {
+        const rows = lines
+            .map(line => line.trim())
+            .map(line => line.replace(/^\|/, '').replace(/\|$/, ''))
+            .map(line => line.split('|').map(cell => cell.trim()));
+
+        const isSeparator = row => row.every(cell => /^:?-{2,}:?$/.test(cell));
+        const nonEmptyRows = rows.filter(row => row.some(cell => cell.length > 0));
+        if (nonEmptyRows.length === 0) {
+            return [];
+        }
+
+        const cleanedRows = nonEmptyRows.filter(row => !isSeparator(row));
+        if (cleanedRows.length === 0) {
+            return [];
+        }
+
+        const headers = cleanedRows[0];
+        const dataRows = cleanedRows.slice(1);
+
+        if (dataRows.length === 0) {
+            return cleanedRows.map(row => row.join(' | '));
+        }
+
+        const output = [];
+        for (const row of dataRows) {
+            if (row.length >= 2 && headers.length >= 2) {
+                output.push(`• ${row[0]}: ${row[1]}`);
+            } else {
+                const parts = row.map((cell, idx) => `${headers[idx] || `Col${idx + 1}`}: ${cell}`);
+                output.push(`• ${parts.join(' | ')}`);
+            }
+        }
+
+        return output;
+    }
+
+    getBrevityInstructions(action) {
+        const perAction = {
+            ai_analytics_all: 'Max 14 lines. Focus on snapshot + 4 KPI lines + 2 actions.',
+            ai_revenue_24h: 'Max 12 lines. Include window, revenue, transaction count, and one insight.',
+            ai_revenue_48h: 'Max 14 lines. Compare previous 24h vs latest 24h with compact deltas.',
+            ai_revenue_7d: 'Max 14 lines. Include total, average, best day, worst day, and direction.',
+            ai_top_products: 'Max 14 lines. Top 5 max, one line per product with revenue/qty/share.',
+            ai_orders_summary: 'Max 12 lines. Totals + paid/unpaid + source split + currency split.',
+            ai_conversion: 'Max 12 lines. Conversion or proxy metrics with one optimization suggestion.',
+            ai_kpi_refresh: 'Max 10 lines. KPI block only.'
+        };
+
+        return perAction[action] || 'Max 12 lines. Keep output compact and action-oriented.';
+    }
+
+    enforceBrevityOnText(text) {
+        const maxLines = 28;
+        const maxChars = 3200;
+        const source = (text || '').toString().trim();
+        if (!source) {
+            return source;
+        }
+
+        let lines = source.split('\n');
+        if (lines.length > maxLines) {
+            lines = lines.slice(0, maxLines);
+            lines.push('... [truncated for brevity]');
+        }
+
+        let result = lines.join('\n');
+        if (result.length > maxChars) {
+            result = `${result.slice(0, maxChars - 28)}\n... [truncated for brevity]`;
+        }
+
+        return result;
     }
 
     buildAnalyticsImagePrompt(series, imageInstructions) {

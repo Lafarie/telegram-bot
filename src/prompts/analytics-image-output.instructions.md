@@ -5,6 +5,11 @@ Use this guide whenever generating analytics image prompts.
 ## Goal
 Generate one clean dashboard image suitable for Telegram.
 
+## Telegram Caption Mode
+- If any accompanying text/caption is generated, keep it plain text.
+- Do not use markdown table syntax or heading symbols.
+- Keep caption concise (max 4 short lines).
+
 ## Canvas Ratio
 - Use a 2:1 aspect ratio composition.
 - Preferred render size: 1400x700 or 1200x600.
