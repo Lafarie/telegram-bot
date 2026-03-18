@@ -1137,15 +1137,18 @@ This bot is focused on AI chat and analytics actions.
     // Legacy handleForwardMediaCommand for backward compatibility with text commands
     async handleForwardMediaCommand(ctx) {
         try {
-            // Check if the user has permissions
-            const botOwner = process.env.BOT_OWNER ? Number(process.env.BOT_OWNER) : null;
-            const authorizedUsers = process.env.AUTHORIZED_USERS ? 
-                process.env.AUTHORIZED_USERS.split(',').map(id => Number(id)) : 
-                [];
-            
-            if (ctx.from && botOwner && ctx.from.id !== botOwner && !authorizedUsers.includes(ctx.from.id)) {
-                return ctx.reply("Only authorized users can use this command. Please use the buttons instead.", 
-                    KeyboardUtils.getMainMenuKeyboard());
+            // Check if the user has permissions (skip if ALLOW_ANYONE is enabled)
+            const allowAnyone = process.env.ALLOW_ANYONE === 'true';
+            if (!allowAnyone) {
+                const botOwner = process.env.BOT_OWNER ? Number(process.env.BOT_OWNER) : null;
+                const authorizedUsers = process.env.AUTHORIZED_USERS ? 
+                    process.env.AUTHORIZED_USERS.split(',').map(id => Number(id)) : 
+                    [];
+                
+                if (ctx.from && botOwner && ctx.from.id !== botOwner && !authorizedUsers.includes(ctx.from.id)) {
+                    return ctx.reply("Only authorized users can use this command. Please use the buttons instead.", 
+                        KeyboardUtils.getMainMenuKeyboard());
+                }
             }
             
             // Get list of channels

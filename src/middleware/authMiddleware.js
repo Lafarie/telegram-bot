@@ -1,6 +1,11 @@
 const logger = require('../utils/logger');
 
 module.exports = async (ctx, next) => {
+  // If ALLOW_ANYONE is enabled, skip all authorization checks
+  if (process.env.ALLOW_ANYONE === 'true') {
+    return next();
+  }
+  
   // Always allow /help and /start commands
   if (ctx.message && ctx.message.text && (
       ctx.message.text.startsWith('/help') || 
