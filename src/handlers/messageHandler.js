@@ -4,9 +4,11 @@ const KeyboardUtils = require('../utils/keyboards');
 const sessionManager = require('../utils/sessionManager');
 
 class MessageHandler {
-  constructor(groupService, aiAgentService) {
+  constructor(groupService, aiAgentService, googleSheetService) {
     this.groupService = groupService;
     this.aiAgentService = aiAgentService;
+    this.googleSheetService = googleSheetService;
+    this.maxDataLoopTurns = Number(process.env.AI_DATA_LOOP_MAX_TURNS || 3);
   }
 
   async handleTextMessage(ctx) {
@@ -79,7 +81,7 @@ class MessageHandler {
       const messages = [...history, { role: 'user', content: text }];
 
       await ctx.sendChatAction('typing');
-      const aiResponse = await this.aiAgentService.createChatCompletion(messages, userId);
+      const aiResponse = await this.resolveAiResponseWithDataLoop(messages, userId);
 
       const updatedHistory = this.limitConversationHistory([
         ...messages,
@@ -95,11 +97,135 @@ class MessageHandler {
       await this.replyInChunks(ctx, responseWithHint, KeyboardUtils.getPrimaryAiKeyboard());
     } catch (error) {
       logger.error('Error while handling AI chat message:', error);
+      const isTimeout = /timed out|abort/i.test(String(error.message || ''));
       await ctx.reply(
-        'AI request failed. Please try again in a moment.',
+        isTimeout
+          ? 'AI request timed out while waiting for the model. Please retry, or increase AI_TIMEOUT_MS in .env.'
+          : 'AI request failed. Please try again in a moment.',
         KeyboardUtils.getPrimaryAiKeyboard()
       );
     }
+  }
+
+  async resolveAiResponseWithDataLoop(baseMessages, userId) {
+    const protocolInstruction = {
+      role: 'system',
+      content:
+        'Before final answer, decide if extra external data is needed. ' +
+        'Respond in strict JSON only. ' +
+        'Use one of these formats:\n' +
+        '{"status":"need_data","requests":[{"source":"google_sheet","detail":"what you need","params":{"transaction_id":"...","date":"YYYY-MM-DD","date_from":"...","date_to":"...","ticket_category":"...","currency":"...","payment_status":"...","min_total_price":0,"max_total_price":1000,"sort_by":"date","sort_order":"desc","limit":10,"fields":["transaction_id","date","total_price","currency"]}}]}\n' +
+        '{"status":"final","answer":"your final answer"}\n' +
+        'For google_sheet requests, params are required and must be relevant to the user question. ' +
+        'If no extra data is required, return final immediately. ' +
+        'Do not include markdown fences.'
+    };
+
+    const workMessages = [...baseMessages, protocolInstruction];
+    let lastRawResponse = '';
+
+    for (let turn = 0; turn < this.maxDataLoopTurns; turn += 1) {
+      const raw = await this.aiAgentService.createChatCompletion(workMessages, userId);
+      lastRawResponse = raw;
+
+      const parsed = this.parseAgentControlJson(raw);
+      if (!parsed) {
+        return raw;
+      }
+
+      if (parsed.status === 'final') {
+        const finalAnswer = (parsed.answer || '').toString().trim();
+        return finalAnswer || raw;
+      }
+
+      if (parsed.status === 'need_data' && Array.isArray(parsed.requests)) {
+        const fetchedDataText = await this.fulfillDataRequests(parsed.requests);
+
+        workMessages.push({
+          role: 'assistant',
+          content: raw
+        });
+
+        workMessages.push({
+          role: 'user',
+          content:
+            'Requested data results:\n' +
+            `${fetchedDataText}\n\n` +
+            'Now respond with strict JSON in final format.'
+        });
+        continue;
+      }
+
+      return raw;
+    }
+
+    return lastRawResponse || 'I could not finalize the answer in time.';
+  }
+
+  parseAgentControlJson(raw) {
+    if (!raw || typeof raw !== 'string') {
+      return null;
+    }
+
+    const trimmed = raw.trim();
+
+    try {
+      return JSON.parse(trimmed);
+    } catch (error) {
+      // Continue and try extracting JSON object from mixed text.
+    }
+
+    const firstBrace = trimmed.indexOf('{');
+    const lastBrace = trimmed.lastIndexOf('}');
+    if (firstBrace < 0 || lastBrace <= firstBrace) {
+      return null;
+    }
+
+    const jsonSlice = trimmed.slice(firstBrace, lastBrace + 1);
+    try {
+      return JSON.parse(jsonSlice);
+    } catch (error) {
+      return null;
+    }
+  }
+
+  async fulfillDataRequests(requests) {
+    const lines = [];
+
+    for (const request of requests) {
+      const source = (request?.source || '').toString().toLowerCase();
+      const detail = (request?.detail || '').toString();
+
+      if (source === 'google_sheet') {
+        if (!this.googleSheetService || !this.googleSheetService.getConfigured()) {
+          lines.push('google_sheet: unavailable (GOOGLE_SHEET_URL not configured).');
+          continue;
+        }
+
+        const params = request?.params;
+        if (!params || typeof params !== 'object' || Array.isArray(params)) {
+          lines.push(
+            'google_sheet: missing required params. Provide relevant filter params such as transaction_id, date/date_from/date_to, ticket_category, currency, payment_status, min_total_price/max_total_price, sort_by, sort_order, limit, fields.'
+          );
+          continue;
+        }
+
+        try {
+          const context = await this.googleSheetService.getFilteredPromptContext(params);
+          lines.push(`google_sheet detail: ${detail || 'none'}`);
+          lines.push(`google_sheet params: ${JSON.stringify(params)}`);
+          lines.push(context);
+        } catch (error) {
+          logger.error('Error fetching google_sheet in data loop:', error);
+          lines.push(`google_sheet: fetch failed (${error.message})`);
+        }
+        continue;
+      }
+
+      lines.push(`${source || 'unknown_source'}: not supported by this bot.`);
+    }
+
+    return lines.join('\n\n');
   }
 
   appendButtonHintIfNeeded(userText, aiText) {
@@ -117,11 +243,26 @@ class MessageHandler {
   }
 
   limitConversationHistory(messages) {
-    const systemMessages = messages.filter(msg => msg.role === 'system').slice(0, 1);
-    const nonSystemMessages = messages.filter(msg => msg.role !== 'system');
-    const maxMessages = 16;
-    const trimmed = nonSystemMessages.slice(-maxMessages);
-    return [...systemMessages, ...trimmed];
+    const maxMessages = 8;
+    const maxContentLength = 1200;
+
+    const systemMessages = messages
+      .filter(msg => msg.role === 'system')
+      .slice(0, 1)
+      .map(msg => ({
+        ...msg,
+        content: (msg.content || '').toString().slice(0, maxContentLength)
+      }));
+
+    const nonSystemMessages = messages
+      .filter(msg => msg.role !== 'system')
+      .slice(-maxMessages)
+      .map(msg => ({
+        role: msg.role,
+        content: (msg.content || '').toString().slice(0, maxContentLength)
+      }));
+
+    return [...systemMessages, ...nonSystemMessages];
   }
 
   async replyInChunks(ctx, text, keyboard) {

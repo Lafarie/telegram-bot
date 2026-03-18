@@ -6,7 +6,7 @@ const { Markup } = require('telegraf');
 class KeyboardUtils {
   static getPrimaryAiKeyboard() {
     return Markup.inlineKeyboard([
-      [Markup.button.callback('📋 Help & Options', 'cmd_help')],
+      // [Markup.button.callback('📋 Help & Options', 'cmd_help')],
       [Markup.button.callback('📊 AI Actions', 'cmd_ai_actions')]
     ]);
   }
@@ -26,6 +26,7 @@ class KeyboardUtils {
         Markup.button.callback('🧾 Orders Summary', 'ai_orders_summary'),
         Markup.button.callback('📉 Conversion Report', 'ai_conversion')
       ],
+      [Markup.button.callback('🖼️ Analytics Image', 'ai_analytics_image')],
       [Markup.button.callback('🔄 Refresh KPI Snapshot', 'ai_kpi_refresh')],
       [Markup.button.callback('◀️ Back', 'cmd_help')]
     ]);

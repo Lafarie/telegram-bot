@@ -77,6 +77,9 @@ AI_API_KEY=sk-ant-your-anthropic-key
 AI_MODEL=claude-3-5-sonnet-latest
 AI_MAX_TOKENS=1024
 AI_TIMEOUT_MS=30000
+
+# For analytics image generation on openai-compatible provider
+# AI_IMAGE_MODEL=gemini-3.1-flash-image
 ```
 
 After updating your environment variables, restart the bot.
@@ -92,7 +95,22 @@ From Help, open `AI Actions` to use quick buttons:
 - Top Products
 - Orders Summary
 - Conversion Report
+- Analytics Image
 - Refresh KPI Snapshot
+
+## Google Sheet Analytics Source
+
+AI analytics actions can pull live data from a Google Sheet and pass it into AI prompts.
+
+Set these environment variables:
+
+AI-compatible setup:
+GOOGLE_SHEET_URL=https://docs.google.com/spreadsheets/d/1Jvt538VC7Mq7Bb1BLE6VcoA7TuAzbvJU7vOejpV5aAE/edit?gid=0#gid=0
+GOOGLE_SHEET_MAX_ROWS=120
+GOOGLE_SHEET_MAX_COLUMNS=20
+GOOGLE_SHEET_TIMEOUT_MS=15000
+
+Important: the sheet must be accessible to the runtime (published/shared for read access), otherwise analytics buttons will still run but include a data-access warning in the AI prompt.
 
 ## Contributing
 

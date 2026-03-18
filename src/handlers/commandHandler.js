@@ -1,12 +1,18 @@
 const logger = require('../utils/logger');
 const KeyboardUtils = require('../utils/keyboards');
 const sessionManager = require('../utils/sessionManager');
+const fs = require('fs/promises');
+const path = require('path');
 
 class CommandHandler {
-    constructor(groupService, forwardingService, aiAgentService) {
+    constructor(groupService, forwardingService, aiAgentService, googleSheetService) {
         this.groupService = groupService;
         this.forwardingService = forwardingService;
         this.aiAgentService = aiAgentService;
+        this.googleSheetService = googleSheetService;
+        this.analyticsOutputInstructionPath = path.join(__dirname, '../prompts/analytics-output.instructions.md');
+        this.analyticsImageInstructionPath = path.join(__dirname, '../prompts/analytics-image-output.instructions.md');
+        this.instructionCache = new Map();
     }
 
     async handleStartCommand(ctx) {
@@ -189,22 +195,54 @@ This bot is focused on AI chat and analytics actions.
                 ai_top_products: 'List top performing products and explain why they are performing best.',
                 ai_orders_summary: 'Provide an orders summary with useful operational insights.',
                 ai_conversion: 'Provide a conversion report summary and suggest optimization steps.',
-                ai_kpi_refresh: 'Provide a refreshed KPI snapshot for revenue, orders, and conversion indicators.'
+                ai_kpi_refresh: 'Provide a refreshed KPI snapshot for revenue, orders, and conversion indicators.',
+                ai_analytics_image: 'Create an analytics image summary from spreadsheet data.'
             };
 
             const prompt = actionPrompts[action] || 'Provide a concise business analytics summary.';
             let content;
+            const requiresSheetData = action.startsWith('ai_');
 
             if (this.aiAgentService) {
                 const userId = ctx.from ? ctx.from.id : 'unknown';
+                const sheetData = await this.getGoogleSheetContextForAnalytics();
+
+                if (requiresSheetData && !sheetData.ok) {
+                    const sheetErrorMessage =
+                        `Could not read Google Sheet data for this analytics action.\n\n` +
+                        `Reason: ${sheetData.error}\n\n` +
+                        'Please verify GOOGLE_SHEET_URL and sheet sharing permissions, then try again.';
+                    return ctx.editMessageText(sheetErrorMessage, KeyboardUtils.getAiActionsKeyboard());
+                }
+
+                if (action === 'ai_analytics_image') {
+                    return this.sendAnalyticsImage(ctx, sheetData.table);
+                }
+
+                const analyticsOutputInstructions = await this.getInstructionContent(
+                    this.analyticsOutputInstructionPath,
+                    this.getDefaultAnalyticsOutputInstructions()
+                );
+
                 const messages = [
                     {
                         role: 'system',
-                        content: 'You are a business analytics assistant. Keep outputs concise and practical. If exact numbers are unavailable, clearly state assumptions.'
+                        content:
+                            'You are a business analytics assistant. Use ONLY provided spreadsheet data for metrics and conclusions. ' +
+                            'Always reference which columns/fields were used. If data is missing, say exactly what is missing.\n\n' +
+                            'Output instructions:\n' +
+                            analyticsOutputInstructions
                     },
                     {
                         role: 'user',
-                        content: prompt
+                        content:
+                            `${prompt}\n\n` +
+                            'Data source requirement: respond based on Google Sheet context below.\n' +
+                            'Output format:\n' +
+                            '1) Key metrics\n' +
+                            '2) Short explanation\n' +
+                            '3) Data references (column names)\n\n' +
+                            `${sheetData.context}`
                     }
                 ];
                 content = await this.aiAgentService.createChatCompletion(messages, userId);
@@ -220,6 +258,198 @@ This bot is focused on AI chat and analytics actions.
                 KeyboardUtils.getAiActionsKeyboard()
             );
         }
+    }
+
+    async getGoogleSheetContextForAnalytics() {
+        if (!this.googleSheetService || !this.googleSheetService.getConfigured()) {
+            return {
+                ok: false,
+                error: 'Spreadsheet data is not configured. Set GOOGLE_SHEET_URL in the environment.',
+                context: '',
+                table: null
+            };
+        }
+
+        try {
+            const table = await this.googleSheetService.getTabularData();
+            const context = await this.googleSheetService.getPromptContext();
+            return {
+                ok: true,
+                error: null,
+                context,
+                table
+            };
+        } catch (error) {
+            logger.error('Error fetching Google Sheet analytics context:', error);
+            return {
+                ok: false,
+                error: `Spreadsheet data could not be fetched: ${error.message}`,
+                context: '',
+                table: null
+            };
+        }
+    }
+
+    async sendAnalyticsImage(ctx, table) {
+        try {
+            const series = this.extractChartSeries(table);
+            const imageOutputInstructions = await this.getInstructionContent(
+                this.analyticsImageInstructionPath,
+                this.getDefaultAnalyticsImageInstructions()
+            );
+            const imagePrompt = this.buildAnalyticsImagePrompt(series, imageOutputInstructions);
+            const userId = ctx.from ? ctx.from.id : 'unknown';
+
+            if (!this.aiAgentService) {
+                throw new Error('AI service is not configured.');
+            }
+
+            const generatedImage = await this.aiAgentService.generateImage(imagePrompt, userId);
+            const photoSource = generatedImage.type === 'base64'
+                ? { source: Buffer.from(generatedImage.value, 'base64') }
+                : generatedImage.value;
+
+            await ctx.replyWithPhoto(photoSource, {
+                caption: `📊 Analytics image generated from Google Sheet\nMetric: ${series.metricLabel}\nPoints: ${series.values.length}`,
+                ...KeyboardUtils.getAiActionsKeyboard()
+            });
+
+            try {
+                return await ctx.editMessageText('Analytics image sent below.', KeyboardUtils.getAiActionsKeyboard());
+            } catch (error) {
+                return null;
+            }
+        } catch (error) {
+            logger.error('Error generating analytics image:', error);
+            return ctx.editMessageText(
+                `Could not generate analytics image: ${error.message}`,
+                KeyboardUtils.getAiActionsKeyboard()
+            );
+        }
+    }
+
+    buildAnalyticsImagePrompt(series, imageInstructions) {
+        const labelsLine = series.labels.join(' | ');
+        const valuesLine = series.values.join(' | ');
+
+        return [
+            'Generate a clean analytics dashboard image for a Telegram business report.',
+            `Primary metric: ${series.metricLabel}`,
+            `Labels: ${labelsLine}`,
+            `Values: ${valuesLine}`,
+            'Style requirements:',
+            '- Modern white background, blue accent charts, clear typography',
+            '- Include a line chart and concise KPI summary cards',
+            '- Show trend direction based on provided values',
+            '- Keep layout readable on mobile',
+            '',
+            'Additional output instructions:',
+            imageInstructions
+        ].join('\n');
+    }
+
+    async getInstructionContent(filePath, fallback) {
+        const cached = this.instructionCache.get(filePath);
+        if (cached) {
+            return cached;
+        }
+
+        try {
+            const content = await fs.readFile(filePath, 'utf8');
+            const trimmed = content.trim();
+            const finalContent = trimmed || fallback;
+            this.instructionCache.set(filePath, finalContent);
+            return finalContent;
+        } catch (error) {
+            logger.warn(`Could not load instruction file ${filePath}: ${error.message}`);
+            this.instructionCache.set(filePath, fallback);
+            return fallback;
+        }
+    }
+
+    getDefaultAnalyticsOutputInstructions() {
+        return [
+            'Format: Snapshot, Key Metrics, Insights, References, Actions.',
+            'Use only provided data; do not invent values.',
+            'If missing values exist, explicitly call them out.'
+        ].join('\n');
+    }
+
+    getDefaultAnalyticsImageInstructions() {
+        return [
+            'Generate a single mobile-friendly dashboard image.',
+            'Use only provided labels and values.',
+            'Include chart plus concise KPI cards.'
+        ].join('\n');
+    }
+
+    extractChartSeries(table) {
+        if (!table || !Array.isArray(table.headers) || !Array.isArray(table.rows)) {
+            throw new Error('No tabular data available.');
+        }
+
+        const headers = table.headers;
+        const rows = table.rows.filter(row => Array.isArray(row));
+        if (headers.length === 0 || rows.length === 0) {
+            throw new Error('Spreadsheet has no usable rows.');
+        }
+
+        const numericIndex = this.findNumericColumnIndex(headers, rows);
+        if (numericIndex < 0) {
+            throw new Error('Could not find a numeric metric column in sheet data.');
+        }
+
+        const labelIndex = this.findLabelColumnIndex(headers, numericIndex);
+        const metricLabel = headers[numericIndex] || 'Metric';
+
+        const points = [];
+        for (const row of rows) {
+            const value = this.toNumber(row[numericIndex]);
+            if (value === null) continue;
+            const label = (row[labelIndex] || '').toString().trim() || `Row ${points.length + 1}`;
+            points.push({ label, value });
+        }
+
+        if (points.length === 0) {
+            throw new Error('No numeric values found in selected metric column.');
+        }
+
+        const trimmed = points.slice(-12);
+        return {
+            metricLabel,
+            labels: trimmed.map(p => p.label),
+            values: trimmed.map(p => p.value)
+        };
+    }
+
+    findNumericColumnIndex(headers, rows) {
+        let bestIndex = -1;
+        let bestScore = -1;
+
+        for (let i = 0; i < headers.length; i += 1) {
+            const values = rows.map(row => this.toNumber(row[i])).filter(v => v !== null);
+            const score = values.length;
+            if (score > bestScore) {
+                bestScore = score;
+                bestIndex = i;
+            }
+        }
+
+        return bestScore > 0 ? bestIndex : -1;
+    }
+
+    findLabelColumnIndex(headers, numericIndex) {
+        const dateLikeIndex = headers.findIndex((header, idx) => idx !== numericIndex && /date|day|time|period/i.test((header || '').toString()));
+        if (dateLikeIndex >= 0) return dateLikeIndex;
+        return numericIndex === 0 ? 1 : 0;
+    }
+
+    toNumber(value) {
+        if (value === null || value === undefined) return null;
+        const normalized = value.toString().replace(/[$,%\s,]/g, '');
+        if (!normalized) return null;
+        const parsed = Number(normalized);
+        return Number.isFinite(parsed) ? parsed : null;
     }
 
     getDefaultAiSystemMessages() {
