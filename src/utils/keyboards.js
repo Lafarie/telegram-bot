@@ -27,7 +27,7 @@ class KeyboardUtils {
         Markup.button.callback('📉 Conversion Report', 'ai_conversion')
       ],
       [Markup.button.callback('🖼️ Analytics Image', 'ai_analytics_image')],
-      [Markup.button.callback('🔄 Refresh KPI Snapshot', 'ai_kpi_refresh')],
+      // [Markup.button.callback('🔄 Refresh KPI Snapshot', 'ai_kpi_refresh')],
       [Markup.button.callback('◀️ Back', 'cmd_help')]
     ]);
   }
