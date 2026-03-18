@@ -7,6 +7,7 @@ const CommandHandler = require('./handlers/commandHandler');
 const MessageHandler = require('./handlers/messageHandler');
 const GroupService = require('./services/groupService');
 const ForwardingService = require('./services/forwardingService');
+const AIAgentService = require('./services/aiAgentService');
 const logger = require('./utils/logger');
 const debug = require('./utils/debug');
 
@@ -21,23 +22,19 @@ bot.use(rateLimitMiddleware);
 // Initialize services
 const groupService = new GroupService(bot);
 const forwardingService = new ForwardingService(bot);
+const aiAgentService = new AIAgentService();
 
 // Initialize handlers
 const mediaHandler = new MediaHandler();
-const commandHandler = new CommandHandler(groupService, forwardingService);
-const messageHandler = new MessageHandler(groupService);
+const commandHandler = new CommandHandler(groupService, forwardingService, aiAgentService);
+const messageHandler = new MessageHandler(groupService, aiAgentService);
 
 // Regular message handlers
 bot.on('photo', (ctx) => mediaHandler.handleMediaUpload(ctx));
 bot.on('document', (ctx) => mediaHandler.handleMediaUpload(ctx));
 bot.command('start', (ctx) => commandHandler.handleStartCommand(ctx));
 bot.command('help', (ctx) => commandHandler.handleHelpCommand(ctx));
-bot.command('groups', (ctx) => commandHandler.handleGroupsCommand(ctx));
-bot.command('channels', (ctx) => commandHandler.handleChannelsCommand(ctx));
-bot.command('allchats', (ctx) => commandHandler.handleAllChatsCommand(ctx));
 bot.command('adduser', (ctx) => commandHandler.handleAddUserCommand(ctx));
-bot.command('whoami', (ctx) => commandHandler.handleWhoAmICommand(ctx));
-bot.command('forwardmedia', (ctx) => commandHandler.handleForwardMediaCommand(ctx));
 bot.on('text', (ctx) => messageHandler.handleTextMessage(ctx));
 
 // Channel post handlers
@@ -57,11 +54,7 @@ bot.on('channel_post', async (ctx) => {
       // Map commands to handlers
       const commandMap = {
         'help': () => commandHandler.handleHelpCommand(ctx),
-        'groups': () => commandHandler.handleGroupsCommand(ctx),
-        'channels': () => commandHandler.handleChannelsCommand(ctx),
-        'allchats': () => commandHandler.handleAllChatsCommand(ctx),
-        'start': () => commandHandler.handleStartCommand(ctx),
-        'forwardmedia': () => commandHandler.handleForwardMediaCommand(ctx)
+        'start': () => commandHandler.handleStartCommand(ctx)
       };
       
       if (commandMap[command]) {

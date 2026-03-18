@@ -3,15 +3,23 @@ const KeyboardUtils = require('../utils/keyboards');
 const sessionManager = require('../utils/sessionManager');
 
 class CommandHandler {
-    constructor(groupService, forwardingService) {
+    constructor(groupService, forwardingService, aiAgentService) {
         this.groupService = groupService;
         this.forwardingService = forwardingService;
+        this.aiAgentService = aiAgentService;
     }
 
     async handleStartCommand(ctx) {
         try {
-            const message = "Welcome to the Media Forwarding Bot! Use the buttons below to navigate:";
-            logger.info('Sending start command with main menu');
+            if (ctx.from) {
+                sessionManager.updateSession(ctx.from.id, {
+                    aiAgentMode: true,
+                    aiMessages: this.getDefaultAiSystemMessages()
+                });
+            }
+
+            const message = "AI mode is active by default. Ask anything, or use Help for more options.";
+            logger.info('Sending start command with AI-first menu');
             
             // Show main menu with inline keyboard
             await ctx.reply(message, KeyboardUtils.getMainMenuKeyboard());
@@ -21,37 +29,52 @@ class CommandHandler {
         }
     }
 
-    async handleHelpCommand(ctx) {
-        try {
-            const message = `📋 *Bot Help & Information*
+    async handleHelpCommand(ctx, fromCallback = false) {
+        const message = `📋 *Bot Help & Information*
 
-This bot helps you forward media between Telegram channels and groups.
+This bot is focused on AI chat and analytics actions.
+
+*AI-First Behavior:*
+• AI mode is enabled by default in private chat
+• Ask any question directly and get AI response
+• Use AI Actions for analytics and revenue shortcuts
 
 *Main Features:*
-• List joined groups and channels
-• Forward media (photos, videos, documents) between channels
-• Channel management
-• User authentication
+• AI chat in private mode
+• Analytics quick-action buttons
+• Revenue shortcuts (24h, 48h, 7d)
 
 *How to use:*
-1. Use the main menu buttons to navigate
-2. For forwarding media, select source and target channels
-3. Choose how many items to forward
+1. Ask the bot directly for AI responses
+2. Open Help to access AI action buttons
+3. Tap AI Actions for quick analytics cards
 
-*Tip:* Use /start to bring up the main menu anytime`;
-            
+*Tip:* Use /start to go back to AI Home anytime`;
+
+        try {
             logger.info('Sending help command response');
-            await ctx.reply(message, { 
+            const options = { 
                 parse_mode: 'Markdown',
-                ...KeyboardUtils.getBackKeyboard()
-            });
+                ...KeyboardUtils.getHelpOptionsKeyboard()
+            };
+
+            if (fromCallback) {
+                await ctx.editMessageText(message, options);
+            } else {
+                await ctx.reply(message, options);
+            }
+
             logger.info('Help command response sent successfully');
         } catch (error) {
             logger.error('Error sending help command response:', error);
             // Try without markdown
             try {
                 const plainMessage = message.replace(/\*/g, '');
-                await ctx.reply(plainMessage, KeyboardUtils.getBackKeyboard());
+                if (fromCallback) {
+                    await ctx.editMessageText(plainMessage, KeyboardUtils.getHelpOptionsKeyboard());
+                } else {
+                    await ctx.reply(plainMessage, KeyboardUtils.getHelpOptionsKeyboard());
+                }
             } catch (secondError) {
                 logger.error('Error sending plain help message:', secondError);
             }
@@ -72,19 +95,17 @@ This bot helps you forward media between Telegram channels and groups.
             // Handle different callback types
             if (callbackData === 'cmd_main_menu') {
                 return this.handleMainMenu(ctx);
+            } else if (callbackData === 'cmd_ai_home') {
+                return this.handleAiHome(ctx);
+            } else if (callbackData === 'cmd_ai_actions') {
+                return this.handleAiActionsMenu(ctx);
             } else if (callbackData === 'cmd_help') {
-                return this.handleHelpCommand(ctx);
-            } else if (callbackData === 'cmd_groups') {
-                return this.handleGroupsCommand(ctx, true);
-            } else if (callbackData === 'cmd_channels') {
-                return this.handleChannelsCommand(ctx, true);
-            } else if (callbackData === 'cmd_all_chats') {
-                return this.handleAllChatsCommand(ctx, true);
-            } else if (callbackData === 'cmd_whoami') {
-                return this.handleWhoAmICommand(ctx, true);
-            } else if (callbackData === 'cmd_forward_media') {
-                return this.handleForwardMediaStart(ctx);
+                return this.handleHelpCommand(ctx, true);
             } 
+
+            else if (callbackData.startsWith('ai_')) {
+                return this.handleAiAnalyticsAction(ctx, callbackData);
+            }
             
             // Handle source channel selection
             else if (callbackData.startsWith('src_channel_')) {
@@ -122,17 +143,93 @@ This bot helps you forward media between Telegram channels and groups.
     
     async handleMainMenu(ctx) {
         try {
-            const message = "Main Menu - Please select an option:";
+            const message = "AI Home - ask your question directly or open Help/AI Actions:";
             await ctx.editMessageText(message, KeyboardUtils.getMainMenuKeyboard());
         } catch (error) {
             logger.error('Error sending main menu:', error);
             // If we can't edit, send a new message
             try {
-                await ctx.reply("Main Menu - Please select an option:", KeyboardUtils.getMainMenuKeyboard());
+                await ctx.reply("AI Home - ask your question directly or open Help/AI Actions:", KeyboardUtils.getMainMenuKeyboard());
             } catch (replyError) {
                 logger.error('Error sending main menu as new message:', replyError);
             }
         }
+    }
+
+    async handleAiHome(ctx) {
+        return this.handleMainMenu(ctx);
+    }
+
+    async handleAiActionsMenu(ctx) {
+        const message =
+            '📊 *AI Actions*\n\n' +
+            'Use these buttons for analytics and revenue snapshots.\n' +
+            'You can still ask free-text questions anytime.';
+
+        const options = {
+            parse_mode: 'Markdown',
+            ...KeyboardUtils.getAiActionsKeyboard()
+        };
+
+        try {
+            return ctx.editMessageText(message, options);
+        } catch (error) {
+            logger.error('Error sending AI actions menu:', error);
+            return ctx.reply(message, options);
+        }
+    }
+
+    async handleAiAnalyticsAction(ctx, action) {
+        try {
+            const actionPrompts = {
+                ai_analytics_all: 'Provide a complete business analytics snapshot including sales, orders, trend direction, and top opportunities.',
+                ai_revenue_24h: 'Provide sales revenue insight for the last 24 hours with key drivers and short recommendation.',
+                ai_revenue_48h: 'Provide sales revenue insight for the last 48 hours, compare first 24h vs second 24h, and suggest actions.',
+                ai_revenue_7d: 'Provide a 7-day sales revenue summary with trend highlights and next-step recommendation.',
+                ai_top_products: 'List top performing products and explain why they are performing best.',
+                ai_orders_summary: 'Provide an orders summary with useful operational insights.',
+                ai_conversion: 'Provide a conversion report summary and suggest optimization steps.',
+                ai_kpi_refresh: 'Provide a refreshed KPI snapshot for revenue, orders, and conversion indicators.'
+            };
+
+            const prompt = actionPrompts[action] || 'Provide a concise business analytics summary.';
+            let content;
+
+            if (this.aiAgentService) {
+                const userId = ctx.from ? ctx.from.id : 'unknown';
+                const messages = [
+                    {
+                        role: 'system',
+                        content: 'You are a business analytics assistant. Keep outputs concise and practical. If exact numbers are unavailable, clearly state assumptions.'
+                    },
+                    {
+                        role: 'user',
+                        content: prompt
+                    }
+                ];
+                content = await this.aiAgentService.createChatCompletion(messages, userId);
+            } else {
+                content = 'AI service is not configured. Set AI_BASE_URL, AI_API_KEY, and AI_MODEL to enable analytics actions.';
+            }
+
+            return ctx.editMessageText(content, KeyboardUtils.getAiActionsKeyboard());
+        } catch (error) {
+            logger.error('Error handling AI analytics action:', error);
+            return ctx.editMessageText(
+                'Could not complete this analytics action right now. Please try again.',
+                KeyboardUtils.getAiActionsKeyboard()
+            );
+        }
+    }
+
+    getDefaultAiSystemMessages() {
+        return [
+            {
+                role: 'system',
+                content:
+                    'You are a helpful Telegram AI assistant. Default to AI chat. Mention buttons only when they can help, especially Help and AI Actions for analytics tasks.'
+            }
+        ];
     }
     
     async handleGroupsCommand(ctx, fromCallback = false) {

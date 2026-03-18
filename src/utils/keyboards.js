@@ -4,23 +4,46 @@ const { Markup } = require('telegraf');
  * Keyboard utilities for interactive bot commands
  */
 class KeyboardUtils {
+  static getPrimaryAiKeyboard() {
+    return Markup.inlineKeyboard([
+      [Markup.button.callback('📋 Help & Options', 'cmd_help')],
+      [Markup.button.callback('📊 AI Actions', 'cmd_ai_actions')]
+    ]);
+  }
+
+  static getAiActionsKeyboard() {
+    return Markup.inlineKeyboard([
+      [Markup.button.callback('📈 Get All Analytics', 'ai_analytics_all')],
+      [
+        Markup.button.callback('💰 Sales Revenue 24h', 'ai_revenue_24h'),
+        Markup.button.callback('💰 Sales Revenue 48h', 'ai_revenue_48h')
+      ],
+      [
+        Markup.button.callback('📅 Sales Revenue 7d', 'ai_revenue_7d'),
+        Markup.button.callback('🔥 Top Products', 'ai_top_products')
+      ],
+      [
+        Markup.button.callback('🧾 Orders Summary', 'ai_orders_summary'),
+        Markup.button.callback('📉 Conversion Report', 'ai_conversion')
+      ],
+      [Markup.button.callback('🔄 Refresh KPI Snapshot', 'ai_kpi_refresh')],
+      [Markup.button.callback('◀️ Back', 'cmd_help')]
+    ]);
+  }
+
+  static getHelpOptionsKeyboard() {
+    return Markup.inlineKeyboard([
+      [Markup.button.callback('📊 AI Actions', 'cmd_ai_actions')],
+      [Markup.button.callback('🏠 AI Home', 'cmd_ai_home')]
+    ]);
+  }
+
   /**
    * Create a main menu keyboard with all primary commands
    * @returns {Object} Markup keyboard
    */
   static getMainMenuKeyboard() {
-    return Markup.inlineKeyboard([
-      [Markup.button.callback('📋 Help', 'cmd_help')],
-      [
-        Markup.button.callback('👥 Groups', 'cmd_groups'),
-        Markup.button.callback('📡 Channels', 'cmd_channels')
-      ],
-      [
-        Markup.button.callback('🔄 Forward Media', 'cmd_forward_media'),
-        Markup.button.callback('🔎 All Chats', 'cmd_all_chats')
-      ],
-      [Markup.button.callback('👤 My Info', 'cmd_whoami')]
-    ]);
+    return this.getPrimaryAiKeyboard();
   }
 
   /**

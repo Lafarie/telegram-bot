@@ -1,14 +1,15 @@
 # Telegram Bot Project
 
-This project is a Telegram bot that forwards media and includes additional features such as command handling, message processing, and user authentication.
+This project is a Telegram bot focused on AI chat and analytics actions.
 
 ## Features
 
-- **Media Forwarding**: The bot can forward media files between users or groups.
 - **Command Handling**: Responds to user commands like `/start` and `/help`.
 - **Message Processing**: Handles incoming text messages and responds appropriately.
 - **User Authentication**: Middleware to check user authentication before accessing certain features.
 - **Rate Limiting**: Prevents abuse by limiting the rate of incoming messages.
+- **AI-First Mode**: In private chat, AI chat is primary by default.
+- **AI Analytics Actions**: Button shortcuts for analytics and sales revenue snapshots.
 
 ## Project Structure
 
@@ -61,8 +62,21 @@ telegram-bot
 ## Usage
 
 - Start the bot by sending the `/start` command.
-- Use the `/help` command to see available commands.
-- Forward media files by sending them to the bot.
+- Ask any message directly in private chat to get AI response.
+- Use the `/help` command to see and open operational button options.
+
+## AI Actions
+
+From Help, open `AI Actions` to use quick buttons:
+
+- Get All Analytics
+- Sales Revenue 24h
+- Sales Revenue 48h
+- Sales Revenue 7d
+- Top Products
+- Orders Summary
+- Conversion Report
+- Refresh KPI Snapshot
 
 ## Contributing
 
