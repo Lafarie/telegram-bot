@@ -9,6 +9,7 @@ const GroupService = require('./services/groupService');
 const ForwardingService = require('./services/forwardingService');
 const AIAgentService = require('./services/aiAgentService');
 const GoogleSheetService = require('./services/googleSheetService');
+const AgentSoulService = require('./services/agentSoulService');
 const logger = require('./utils/logger');
 const debug = require('./utils/debug');
 
@@ -25,11 +26,12 @@ const groupService = new GroupService(bot);
 const forwardingService = new ForwardingService(bot);
 const aiAgentService = new AIAgentService();
 const googleSheetService = new GoogleSheetService();
+const agentSoulService = new AgentSoulService();
 
 // Initialize handlers
 const mediaHandler = new MediaHandler();
-const commandHandler = new CommandHandler(groupService, forwardingService, aiAgentService, googleSheetService);
-const messageHandler = new MessageHandler(groupService, aiAgentService, googleSheetService);
+const commandHandler = new CommandHandler(groupService, forwardingService, aiAgentService, googleSheetService, agentSoulService);
+const messageHandler = new MessageHandler(groupService, aiAgentService, googleSheetService, agentSoulService);
 
 // Regular message handlers
 bot.on('photo', (ctx) => mediaHandler.handleMediaUpload(ctx));

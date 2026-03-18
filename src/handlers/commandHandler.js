@@ -5,11 +5,13 @@ const fs = require('fs/promises');
 const path = require('path');
 
 class CommandHandler {
-    constructor(groupService, forwardingService, aiAgentService, googleSheetService) {
+    constructor(groupService, forwardingService, aiAgentService, googleSheetService, agentSoulService) {
         this.groupService = groupService;
         this.forwardingService = forwardingService;
         this.aiAgentService = aiAgentService;
         this.googleSheetService = googleSheetService;
+        this.agentSoulService = agentSoulService;
+        this.botName = process.env.BOT_NAME || 'Rush Ticketing Agent';
         this.analyticsOutputInstructionPath = path.join(__dirname, '../prompts/analytics-output.instructions.md');
         this.analyticsImageInstructionPath = path.join(__dirname, '../prompts/analytics-image-output.instructions.md');
         this.instructionCache = new Map();
@@ -20,11 +22,11 @@ class CommandHandler {
             if (ctx.from) {
                 sessionManager.updateSession(ctx.from.id, {
                     aiAgentMode: true,
-                    aiMessages: this.getDefaultAiSystemMessages()
+                    aiMessages: await this.getDefaultAiSystemMessages()
                 });
             }
 
-            const message = "AI mode is active by default. Ask anything, or use Help for more options.";
+            const message = `${this.botName} is active by default. Ask for transaction details, ticket status, payments, or use Help for more options.`;
             logger.info('Sending start command with AI-first menu');
             
             // Show main menu with inline keyboard
@@ -38,11 +40,11 @@ class CommandHandler {
     async handleHelpCommand(ctx, fromCallback = false) {
         const message = `📋 *Bot Help & Information*
 
-This bot is focused on AI chat and analytics actions.
+${this.botName} is focused on transaction details, ticketing support, and analytics actions.
 
 *AI-First Behavior:*
 • AI mode is enabled by default in private chat
-• Ask any question directly and get AI response
+• Ask directly for transaction details, payment status, and ticket info
 • Use AI Actions for analytics and revenue shortcuts
 
 *Main Features:*
@@ -732,14 +734,26 @@ This bot is focused on AI chat and analytics actions.
         return Number.isFinite(parsed) ? parsed : null;
     }
 
-    getDefaultAiSystemMessages() {
+    async getDefaultAiSystemMessages() {
+        const soulPrompt = await this.getAgentSoulPrompt();
         return [
             {
                 role: 'system',
-                content:
-                    'You are a helpful Telegram AI assistant. Default to AI chat. Mention buttons only when they can help, especially Help and AI Actions for analytics tasks.'
+                content: soulPrompt
             }
         ];
+    }
+
+    async getAgentSoulPrompt() {
+        if (this.agentSoulService && typeof this.agentSoulService.getSoulPrompt === 'function') {
+            return this.agentSoulService.getSoulPrompt();
+        }
+
+        return [
+            `You are ${this.botName}.`,
+            'You help users get transaction details and relevant ticketing support information.',
+            'Ask for missing details when needed and avoid inventing values.'
+        ].join('\n');
     }
     
     async handleGroupsCommand(ctx, fromCallback = false) {

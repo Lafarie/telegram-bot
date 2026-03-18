@@ -4,11 +4,13 @@ const KeyboardUtils = require('../utils/keyboards');
 const sessionManager = require('../utils/sessionManager');
 
 class MessageHandler {
-  constructor(groupService, aiAgentService, googleSheetService) {
+  constructor(groupService, aiAgentService, googleSheetService, agentSoulService) {
     this.groupService = groupService;
     this.aiAgentService = aiAgentService;
     this.googleSheetService = googleSheetService;
+    this.agentSoulService = agentSoulService;
     this.maxDataLoopTurns = Number(process.env.AI_DATA_LOOP_MAX_TURNS || 3);
+    this.botName = process.env.BOT_NAME || 'Rush Ticketing Agent';
   }
 
   async handleTextMessage(ctx) {
@@ -54,13 +56,48 @@ class MessageHandler {
     }
   }
 
-  getDefaultAiHistory() {
+  getDefaultAiHistory(soulPrompt) {
     return [
       {
         role: 'system',
-        content:
-          'You are a helpful Telegram AI assistant. AI mode is primary. For analytics or sales requests, suggest using Help and AI Actions buttons when useful.'
+        content: soulPrompt
       }
+    ];
+  }
+
+  async getAgentSoulPrompt() {
+    if (this.agentSoulService && typeof this.agentSoulService.getSoulPrompt === 'function') {
+      return this.agentSoulService.getSoulPrompt();
+    }
+
+    return [
+      `You are ${this.botName}.`,
+      'Help users with transaction details and relevant ticketing information.',
+      'Ask for missing details when needed and do not invent data.'
+    ].join('\n');
+  }
+
+  ensureSoulInHistory(history, soulPrompt) {
+    if (!Array.isArray(history) || history.length === 0) {
+      return this.getDefaultAiHistory(soulPrompt);
+    }
+
+    const cleaned = history.filter(item => item && typeof item.content === 'string');
+    if (cleaned.length === 0) {
+      return this.getDefaultAiHistory(soulPrompt);
+    }
+
+    const hasSystemAtTop = cleaned[0].role === 'system';
+    if (hasSystemAtTop) {
+      return [
+        { role: 'system', content: soulPrompt },
+        ...cleaned.slice(1)
+      ];
+    }
+
+    return [
+      { role: 'system', content: soulPrompt },
+      ...cleaned
     ];
   }
 
@@ -74,9 +111,8 @@ class MessageHandler {
       }
 
       const userId = ctx.from.id;
-      const history = Array.isArray(session.aiMessages) && session.aiMessages.length > 0
-        ? session.aiMessages
-        : this.getDefaultAiHistory();
+      const soulPrompt = await this.getAgentSoulPrompt();
+      const history = this.ensureSoulInHistory(session.aiMessages, soulPrompt);
 
       const messages = [...history, { role: 'user', content: text }];
 
@@ -307,13 +343,25 @@ class MessageHandler {
   sendWelcomeMessage(ctx) {
     try {
       if (ctx.from) {
-        sessionManager.updateSession(ctx.from.id, {
-          aiAgentMode: true,
-          aiMessages: this.getDefaultAiHistory()
-        });
+        this.getAgentSoulPrompt()
+          .then(soulPrompt => {
+            sessionManager.updateSession(ctx.from.id, {
+              aiAgentMode: true,
+              aiMessages: this.getDefaultAiHistory(soulPrompt)
+            });
+          })
+          .catch(error => {
+            logger.warn(`Could not preload soul prompt for welcome session: ${error.message}`);
+            sessionManager.updateSession(ctx.from.id, {
+              aiAgentMode: true,
+              aiMessages: this.getDefaultAiHistory(
+                `You are ${this.botName}. Help users with transaction details and relevant ticketing information.`
+              )
+            });
+          });
       }
 
-      const welcomeText = 'AI mode is active. Ask anything directly, or tap Help & Options for tools.';
+      const welcomeText = `${this.botName} is active. Ask for transaction details, payments, ticket status, or tap Help & Options.`;
       ctx.reply(welcomeText, KeyboardUtils.getPrimaryAiKeyboard());
     } catch (error) {
       logger.error('Error sending welcome message:', error);
@@ -324,11 +372,11 @@ class MessageHandler {
     try {
       const helpText = `📋 *Bot Help & Information*
 
-This bot is focused on AI chat and analytics actions.
+${this.botName} helps with transaction details, ticketing support, and analytics actions.
 
 *AI-First Behavior:*
 • AI mode is enabled by default in private chat
-• Ask any question directly to the bot
+• Ask directly for transaction details, payment status, and ticket info
 • For analytics/revenue shortcuts, open AI Actions
 
 *Main Features:*

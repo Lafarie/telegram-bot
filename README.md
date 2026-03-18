@@ -2,6 +2,8 @@
 
 This project is a Telegram bot focused on AI chat and analytics actions.
 
+Default assistant identity: Rush Ticketing Agent (transaction and ticketing support).
+
 ## Features
 
 - **Command Handling**: Responds to user commands like `/start` and `/help`.
@@ -26,6 +28,8 @@ telegram-bot
 │   ├── middleware
 │   │   ├── authMiddleware.js   # User authentication middleware
 │   │   └── rateLimitMiddleware.js # Rate limiting middleware
+│   ├── prompts
+│   │   └── soul.md             # Core assistant persona (Rush Ticketing Agent)
 │   ├── services
 │   │   ├── forwardingService.js # Logic for forwarding messages and media
 │   │   ├── mediaService.js      # Manages media processing tasks
@@ -62,8 +66,17 @@ telegram-bot
 ## Usage
 
 - Start the bot by sending the `/start` command.
-- Ask any message directly in private chat to get AI response.
+- Ask for transaction details, payment status, ticket info, or any relevant support question.
 - Use the `/help` command to see and open operational button options.
+
+## Persona (Soul Prompt)
+
+The assistant persona is defined in `src/prompts/soul.md`.
+
+- Name: Rush Ticketing Agent
+- Purpose: Help users get transaction details and related ticketing information
+
+You can customize behavior and tone by editing that file.
 
 ## Connect To Claude
 
