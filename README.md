@@ -65,6 +65,22 @@ telegram-bot
 - Ask any message directly in private chat to get AI response.
 - Use the `/help` command to see and open operational button options.
 
+## Connect To Claude
+
+You cannot connect the bot to the claude.com product page directly.
+Use Anthropic API credentials instead:
+
+```env
+AI_PROVIDER=anthropic
+AI_BASE_URL=https://api.anthropic.com/v1
+AI_API_KEY=sk-ant-your-anthropic-key
+AI_MODEL=claude-3-5-sonnet-latest
+AI_MAX_TOKENS=1024
+AI_TIMEOUT_MS=30000
+```
+
+After updating your environment variables, restart the bot.
+
 ## AI Actions
 
 From Help, open `AI Actions` to use quick buttons:
