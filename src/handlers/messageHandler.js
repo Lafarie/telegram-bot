@@ -1,10 +1,12 @@
 const helpers = require('../utils/helpers');
 const logger = require('../utils/logger');
 const KeyboardUtils = require('../utils/keyboards');
+const sessionManager = require('../utils/sessionManager');
 
 class MessageHandler {
-  constructor(groupService) {
+  constructor(groupService, aiAgentService) {
     this.groupService = groupService;
+    this.aiAgentService = aiAgentService;
   }
 
   async handleTextMessage(ctx) {
@@ -18,6 +20,15 @@ class MessageHandler {
     
     const text = message.text;
     const isChannelPost = !!ctx.channelPost;
+    const isPrivateChat = ctx.chat && ctx.chat.type === 'private';
+    const userId = ctx.from ? ctx.from.id : null;
+
+    if (!isChannelPost && isPrivateChat && userId) {
+      const session = sessionManager.getSession(userId);
+      if (session.aiAgentMode && !text.startsWith('/')) {
+        return this.handleAiAgentMessage(ctx, text, session);
+      }
+    }
     
     logger.info(`Processing ${isChannelPost ? 'channel post' : 'message'}: ${text.substring(0, 50)}`);
 
@@ -26,6 +37,26 @@ class MessageHandler {
       this.sendWelcomeMessage(ctx);
     } else if (text.startsWith('/help')) {
       this.sendHelpMessage(ctx);
+    } else if (/^\/agentoff(?:\s|$)/.test(text) && isPrivateChat && userId) {
+      sessionManager.updateSession(userId, {
+        aiAgentMode: false,
+        aiMessages: []
+      });
+      ctx.reply('AI mode disabled.', KeyboardUtils.getMainMenuKeyboard());
+    } else if (/^\/agent(?:\s|$)/.test(text) && isPrivateChat && userId) {
+      sessionManager.updateSession(userId, {
+        aiAgentMode: true,
+        aiMessages: [
+          {
+            role: 'system',
+            content: 'You are a helpful Telegram assistant. Keep answers concise, clear, and practical.'
+          }
+        ]
+      });
+      ctx.reply(
+        '🤖 AI mode enabled. Send any text to chat with the AI.',
+        KeyboardUtils.getAiAgentKeyboard()
+      );
     } else if (helpers.isTelegramInviteLink(text)) {
       // Process Telegram invitation link - not for channel posts
       if (!isChannelPost) {
@@ -35,6 +66,69 @@ class MessageHandler {
       // For any other message, show the main menu (in private chats)
       if (!isChannelPost && ctx.chat.type === 'private') {
         this.handleUnknownMessage(ctx);
+      }
+    }
+  }
+
+  async handleAiAgentMessage(ctx, text, session) {
+    try {
+      if (!this.aiAgentService) {
+        return ctx.reply('AI service is not configured on this bot instance.');
+      }
+
+      const userId = ctx.from.id;
+      const history = Array.isArray(session.aiMessages) ? session.aiMessages : [];
+      const messages = [...history, { role: 'user', content: text }];
+
+      await ctx.sendChatAction('typing');
+      const aiResponse = await this.aiAgentService.createChatCompletion(messages, userId);
+
+      const updatedHistory = this.limitConversationHistory([
+        ...messages,
+        { role: 'assistant', content: aiResponse }
+      ]);
+
+      sessionManager.updateSession(userId, {
+        aiAgentMode: true,
+        aiMessages: updatedHistory
+      });
+
+      await this.replyInChunks(ctx, aiResponse, KeyboardUtils.getAiAgentKeyboard());
+    } catch (error) {
+      logger.error('Error while processing AI message:', error);
+      await ctx.reply(
+        'AI request failed. Check `AI_BASE_URL`, `AI_API_KEY`, and `AI_MODEL` in your environment.',
+        KeyboardUtils.getAiAgentKeyboard()
+      );
+    }
+  }
+
+  limitConversationHistory(messages) {
+    const systemMessages = messages.filter(msg => msg.role === 'system').slice(0, 1);
+    const nonSystemMessages = messages.filter(msg => msg.role !== 'system');
+    const maxMessages = 16;
+    const trimmed = nonSystemMessages.slice(-maxMessages);
+    return [...systemMessages, ...trimmed];
+  }
+
+  async replyInChunks(ctx, text, keyboard) {
+    const chunkSize = 3800;
+    const safeText = text || '';
+    const chunks = [];
+
+    for (let i = 0; i < safeText.length; i += chunkSize) {
+      chunks.push(safeText.slice(i, i + chunkSize));
+    }
+
+    if (chunks.length === 0) {
+      return ctx.reply('(empty response)', keyboard);
+    }
+
+    for (let i = 0; i < chunks.length; i += 1) {
+      if (i === chunks.length - 1) {
+        await ctx.reply(chunks[i], keyboard);
+      } else {
+        await ctx.reply(chunks[i]);
       }
     }
   }

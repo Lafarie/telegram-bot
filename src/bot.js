@@ -7,6 +7,7 @@ const CommandHandler = require('./handlers/commandHandler');
 const MessageHandler = require('./handlers/messageHandler');
 const GroupService = require('./services/groupService');
 const ForwardingService = require('./services/forwardingService');
+const AIAgentService = require('./services/aiAgentService');
 const logger = require('./utils/logger');
 const debug = require('./utils/debug');
 
@@ -21,11 +22,12 @@ bot.use(rateLimitMiddleware);
 // Initialize services
 const groupService = new GroupService(bot);
 const forwardingService = new ForwardingService(bot);
+const aiAgentService = new AIAgentService();
 
 // Initialize handlers
 const mediaHandler = new MediaHandler();
-const commandHandler = new CommandHandler(groupService, forwardingService);
-const messageHandler = new MessageHandler(groupService);
+const commandHandler = new CommandHandler(groupService, forwardingService, aiAgentService);
+const messageHandler = new MessageHandler(groupService, aiAgentService);
 
 // Regular message handlers
 bot.on('photo', (ctx) => mediaHandler.handleMediaUpload(ctx));
@@ -38,6 +40,9 @@ bot.command('allchats', (ctx) => commandHandler.handleAllChatsCommand(ctx));
 bot.command('adduser', (ctx) => commandHandler.handleAddUserCommand(ctx));
 bot.command('whoami', (ctx) => commandHandler.handleWhoAmICommand(ctx));
 bot.command('forwardmedia', (ctx) => commandHandler.handleForwardMediaCommand(ctx));
+bot.command('agent', (ctx) => commandHandler.handleAiAgentCommand(ctx));
+bot.command('agentoff', (ctx) => commandHandler.handleAiAgentExitCommand(ctx));
+bot.command('agentreset', (ctx) => commandHandler.handleAiAgentResetCommand(ctx));
 bot.on('text', (ctx) => messageHandler.handleTextMessage(ctx));
 
 // Channel post handlers

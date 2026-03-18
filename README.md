@@ -9,6 +9,7 @@ This project is a Telegram bot that forwards media and includes additional featu
 - **Message Processing**: Handles incoming text messages and responds appropriately.
 - **User Authentication**: Middleware to check user authentication before accessing certain features.
 - **Rate Limiting**: Prevents abuse by limiting the rate of incoming messages.
+- **AI Agent Mode**: Private chat mode that connects to an OpenAI-compatible chat API.
 
 ## Project Structure
 
@@ -63,6 +64,29 @@ telegram-bot
 - Start the bot by sending the `/start` command.
 - Use the `/help` command to see available commands.
 - Forward media files by sending them to the bot.
+- Use `/agent` or the `🤖 AI Agent` button to enter AI mode.
+- Use `/agentoff` or `❌ Exit AI Mode` to leave AI mode.
+
+## AI API Integration
+
+This bot supports OpenAI-compatible chat completion APIs.
+
+Required environment variables:
+
+- `AI_BASE_URL` (example: `http://127.0.0.1:8045/v1`)
+- `AI_API_KEY`
+- `AI_MODEL` (example: `gemini-3-flash`)
+
+Request format sent by the bot:
+
+```json
+{
+   "model": "gemini-3-flash",
+   "messages": [
+      { "role": "user", "content": "Hello" }
+   ]
+}
+```
 
 ## Contributing
 

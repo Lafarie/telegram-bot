@@ -3,9 +3,10 @@ const KeyboardUtils = require('../utils/keyboards');
 const sessionManager = require('../utils/sessionManager');
 
 class CommandHandler {
-    constructor(groupService, forwardingService) {
+    constructor(groupService, forwardingService, aiAgentService) {
         this.groupService = groupService;
         this.forwardingService = forwardingService;
+        this.aiAgentService = aiAgentService;
     }
 
     async handleStartCommand(ctx) {
@@ -84,6 +85,12 @@ This bot helps you forward media between Telegram channels and groups.
                 return this.handleWhoAmICommand(ctx, true);
             } else if (callbackData === 'cmd_forward_media') {
                 return this.handleForwardMediaStart(ctx);
+            } else if (callbackData === 'cmd_ai_agent') {
+                return this.handleAiAgentCommand(ctx, true);
+            } else if (callbackData === 'cmd_ai_exit') {
+                return this.handleAiAgentExitCommand(ctx, true);
+            } else if (callbackData === 'cmd_ai_reset') {
+                return this.handleAiAgentResetCommand(ctx, true);
             } 
             
             // Handle source channel selection
@@ -358,6 +365,117 @@ This bot helps you forward media between Telegram channels and groups.
     handleUnknownCommand(ctx) {
         const message = "Sorry, I didn't understand that command.";
         ctx.reply(message, KeyboardUtils.getMainMenuKeyboard());
+    }
+
+    async handleAiAgentCommand(ctx, fromCallback = false) {
+        try {
+            if (!ctx.chat || ctx.chat.type !== 'private') {
+                const message = 'AI mode is only available in private chat.';
+                if (fromCallback) {
+                    return ctx.editMessageText(message, KeyboardUtils.getMainMenuKeyboard());
+                }
+                return ctx.reply(message, KeyboardUtils.getMainMenuKeyboard());
+            }
+
+            const userId = ctx.from.id;
+            sessionManager.updateSession(userId, {
+                aiAgentMode: true,
+                aiMessages: [
+                    {
+                        role: 'system',
+                        content: 'You are a helpful Telegram assistant. Keep answers concise, clear, and practical.'
+                    }
+                ]
+            });
+
+            const message =
+                '🤖 *AI Agent Mode Enabled*\n\n' +
+                'Send any text and I will reply using your configured AI API.\n' +
+                'Use the buttons below to clear context or exit AI mode.';
+
+            const options = {
+                parse_mode: 'Markdown',
+                ...KeyboardUtils.getAiAgentKeyboard()
+            };
+
+            if (fromCallback) {
+                return ctx.editMessageText(message, options);
+            }
+
+            return ctx.reply(message, options);
+        } catch (error) {
+            logger.error('Error enabling AI agent mode:', error);
+            const errorMessage = 'Could not enable AI mode right now.';
+            if (fromCallback) {
+                return ctx.editMessageText(errorMessage, KeyboardUtils.getMainMenuKeyboard());
+            }
+            return ctx.reply(errorMessage, KeyboardUtils.getMainMenuKeyboard());
+        }
+    }
+
+    async handleAiAgentExitCommand(ctx, fromCallback = false) {
+        try {
+            if (!ctx.from) {
+                return;
+            }
+
+            sessionManager.updateSession(ctx.from.id, {
+                aiAgentMode: false,
+                aiMessages: []
+            });
+
+            const message = 'AI mode disabled. You are back to the main menu.';
+
+            if (fromCallback) {
+                return ctx.editMessageText(message, KeyboardUtils.getMainMenuKeyboard());
+            }
+
+            return ctx.reply(message, KeyboardUtils.getMainMenuKeyboard());
+        } catch (error) {
+            logger.error('Error disabling AI agent mode:', error);
+            const errorMessage = 'Could not exit AI mode right now.';
+            if (fromCallback) {
+                return ctx.editMessageText(errorMessage, KeyboardUtils.getMainMenuKeyboard());
+            }
+            return ctx.reply(errorMessage, KeyboardUtils.getMainMenuKeyboard());
+        }
+    }
+
+    async handleAiAgentResetCommand(ctx, fromCallback = false) {
+        try {
+            if (!ctx.from) {
+                return;
+            }
+
+            sessionManager.updateSession(ctx.from.id, {
+                aiAgentMode: true,
+                aiMessages: [
+                    {
+                        role: 'system',
+                        content: 'You are a helpful Telegram assistant. Keep answers concise, clear, and practical.'
+                    }
+                ]
+            });
+
+            const message = 'AI conversation context was cleared. Start a new prompt.';
+            const options = {
+                parse_mode: 'Markdown',
+                ...KeyboardUtils.getAiAgentKeyboard()
+            };
+
+            if (fromCallback) {
+                return ctx.editMessageText(message, options);
+            }
+
+            return ctx.reply(message, options);
+        } catch (error) {
+            logger.error('Error resetting AI agent context:', error);
+            const errorMessage = 'Could not clear AI context right now.';
+            if (fromCallback) {
+                return ctx.editMessageText(errorMessage, KeyboardUtils.getMainMenuKeyboard());
+            }
+            return ctx.reply(errorMessage, KeyboardUtils.getMainMenuKeyboard());
+        }
     }
     
     // Forward media workflow - Step 1: Start the process and select source channel

@@ -19,6 +19,7 @@ class KeyboardUtils {
         Markup.button.callback('🔄 Forward Media', 'cmd_forward_media'),
         Markup.button.callback('🔎 All Chats', 'cmd_all_chats')
       ],
+      [Markup.button.callback('🤖 AI Agent', 'cmd_ai_agent')],
       [Markup.button.callback('👤 My Info', 'cmd_whoami')]
     ]);
   }
@@ -90,6 +91,17 @@ class KeyboardUtils {
         Markup.button.callback('50 items', `fwd_${sourceChannelId}_${targetChannelId}_50`)
       ],
       [Markup.button.callback('◀️ Back to channel selection', 'cmd_forward_media')]
+    ]);
+  }
+
+  /**
+   * Create keyboard for AI mode actions
+   * @returns {Object} Markup keyboard
+   */
+  static getAiAgentKeyboard() {
+    return Markup.inlineKeyboard([
+      [Markup.button.callback('🧹 Clear Context', 'cmd_ai_reset')],
+      [Markup.button.callback('❌ Exit AI Mode', 'cmd_ai_exit')]
     ]);
   }
 }
