@@ -1,5 +1,7 @@
 require('dotenv').config();
 const { Telegraf } = require('telegraf');
+const express = require('express');
+const path = require('path');
 const authMiddleware = require('./middleware/authMiddleware');
 const rateLimitMiddleware = require('./middleware/rateLimitMiddleware');
 const MediaHandler = require('./handlers/mediaHandler');
@@ -147,7 +149,54 @@ bot.catch((err, ctx) => {
   }
 });
 
-// Start the bot
+// Start the bot and HTTP server
+const httpHost = process.env.HTTP_HOST || 'localhost';
+const httpPort = process.env.HTTP_PORT || 3000;
+const formsDir = path.join(__dirname, '../forms_output');
+
+// Initialize Express server for serving HTML forms
+const app = express();
+
+// Serve static files from forms_output directory
+app.use(express.static(formsDir));
+
+// Health check endpoint
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok', bot: 'running' });
+});
+
+// Redirect root to info page
+app.get('/', (req, res) => {
+  res.send(`
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Telegram Bot Form Server</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+    </head>
+    <body class="bg-gradient-to-br from-blue-50 to-indigo-100 min-h-screen flex items-center justify-center">
+        <div class="max-w-md mx-auto bg-white rounded-lg shadow-lg p-8">
+            <h1 class="text-3xl font-bold text-blue-600 mb-4">🤖 Telegram Bot</h1>
+            <p class="text-gray-600 mb-4">Form Server is running!</p>
+            <div class="bg-blue-50 p-4 rounded border border-blue-200">
+                <p class="text-sm text-gray-700"><strong>Status:</strong> ✅ Active</p>
+                <p class="text-sm text-gray-700"><strong>Server:</strong> ${httpHost}:${httpPort}</p>
+                <p class="text-sm text-gray-700"><strong>Timestamp:</strong> ${new Date().toISOString()}</p>
+            </div>
+            <p class="text-sm text-gray-500 mt-4">Send a Google Form link to the bot to get started!</p>
+        </div>
+    </body>
+    </html>
+  `);
+});
+
+// Start HTTP server
+const server = app.listen(httpPort, httpHost, () => {
+  logger.info(`HTTP server started on http://${httpHost}:${httpPort}`);
+  console.log(`HTTP server started on http://${httpHost}:${httpPort}`);
+});
+
+// Start Telegram bot
 bot.launch()
   .then(() => {
     logger.info('Bot is up and running!');

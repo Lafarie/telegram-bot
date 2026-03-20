@@ -2,6 +2,7 @@ const helpers = require('../utils/helpers');
 const logger = require('../utils/logger');
 const KeyboardUtils = require('../utils/keyboards');
 const sessionManager = require('../utils/sessionManager');
+const FormConverterService = require('../services/formConverterService');
 
 class MessageHandler {
   constructor(groupService, aiAgentService, googleSheetService, agentSoulService) {
@@ -9,6 +10,7 @@ class MessageHandler {
     this.aiAgentService = aiAgentService;
     this.googleSheetService = googleSheetService;
     this.agentSoulService = agentSoulService;
+    this.formConverterService = new FormConverterService();
     this.maxDataLoopTurns = Number(process.env.AI_DATA_LOOP_MAX_TURNS || 3);
     this.botName = process.env.BOT_NAME || 'Rush Ticketing Agent';
   }
@@ -29,6 +31,29 @@ class MessageHandler {
     
     logger.info(`Processing ${isChannelPost ? 'channel post' : 'message'}: ${text.substring(0, 50)}`);
 
+    // Basic command handling (highest priority)
+    if (text.startsWith('/start')) {
+      this.sendWelcomeMessage(ctx);
+      return;
+    } else if (text.startsWith('/help')) {
+      this.sendHelpMessage(ctx);
+      return;
+    }
+
+    // Check for special link types (highest priority after commands)
+    if (this.formConverterService.isGoogleFormsLink(text)) {
+      // Process Google Forms link - not for channel posts
+      if (!isChannelPost) {
+        return this.processGoogleFormLink(ctx, text);
+      }
+    } else if (helpers.isTelegramInviteLink(text)) {
+      // Process Telegram invitation link - not for channel posts
+      if (!isChannelPost) {
+        return this.processInviteLink(ctx, text);
+      }
+    }
+
+    // AI chat mode (only for regular messages in private chat)
     if (isPrivateChat && userId) {
       const session = sessionManager.getSession(userId);
       const aiModeEnabled = session.aiAgentMode !== false;
@@ -38,21 +63,9 @@ class MessageHandler {
       }
     }
 
-    // Basic command handling
-    if (text.startsWith('/start')) {
-      this.sendWelcomeMessage(ctx);
-    } else if (text.startsWith('/help')) {
-      this.sendHelpMessage(ctx);
-    } else if (helpers.isTelegramInviteLink(text)) {
-      // Process Telegram invitation link - not for channel posts
-      if (!isChannelPost) {
-        this.processInviteLink(ctx, text);
-      }
-    } else {
-      // For any other message, show the main menu (in private chats)
-      if (!isChannelPost && ctx.chat.type === 'private') {
-        this.handleUnknownMessage(ctx);
-      }
+    // For any other message, show the main menu (in private chats)
+    if (!isChannelPost && ctx.chat.type === 'private') {
+      this.handleUnknownMessage(ctx);
     }
   }
 
@@ -406,6 +419,46 @@ ${this.botName} helps with transaction details, ticketing support, and analytics
       ctx.reply(unknownText, KeyboardUtils.getPrimaryAiKeyboard());
     } catch (error) {
       logger.error('Error sending unknown message response:', error);
+    }
+  }
+
+  async processGoogleFormLink(ctx, formLink) {
+    try {
+      await ctx.sendChatAction('typing');
+      await ctx.reply('🔄 Converting Google Form to HTML... Please wait.');
+
+      const result = await this.formConverterService.processGoogleFormLink(formLink);
+
+      if (result.success) {
+        const localFormUrl = `http://localhost:5500/forms_output/${result.filename}`;
+
+        const message = `✅ *Form converted successfully!*
+
+      • Original Form: [Open](${result.originalUrl})
+      • Modified Form: [Open on localhost](${localFormUrl})
+
+      Modified URL:
+      ${localFormUrl}`;
+
+        await ctx.reply(message, { 
+          parse_mode: 'Markdown',
+          ...KeyboardUtils.getPrimaryAiKeyboard()
+        });
+
+        logger.info(`Google Form converted successfully: ${result.filename}`);
+      } else {
+        await ctx.reply(
+          `❌ Error converting form: ${result.error}\n\nPlease check the form link and try again.`,
+          KeyboardUtils.getPrimaryAiKeyboard()
+        );
+        logger.error(`Failed to convert Google Form: ${result.error}`);
+      }
+    } catch (error) {
+      logger.error('Error processing Google Form link:', error);
+      await ctx.reply(
+        '❌ An error occurred while processing the form. Please try again later.',
+        KeyboardUtils.getPrimaryAiKeyboard()
+      );
     }
   }
 }
